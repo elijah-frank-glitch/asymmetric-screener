@@ -1,0 +1,9 @@
+node_modules/
+dist/
+public/data/
+public/*.xlsx
+data/universe.json
+data/derived.json
+data/*.log
+.claude/
+.vercel/
