@@ -7,3 +7,4 @@ data/derived.json
 data/*.log
 .claude/
 .vercel/
+data/*.tmp

@@ -1,7 +1,8 @@
 // Descarga la descripción de negocio de cada empresa desde Yahoo Finance (assetProfile).
 // Reanudable: guarda en data/profiles.json  { "EXCH:TICKER": "descripción" | "" }
 // Uso: node scripts/fetch-profiles.mjs [maxNuevos]
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, renameSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const MAX_NEW = Number(process.argv[2] || Infinity);
 const CONC = 6;
@@ -82,7 +83,12 @@ await auth();
 const todo = uni.rows.filter((r) => !(r[0] in cache)).slice(0, MAX_NEW);
 console.log(`pendientes: ${todo.length} (en caché: ${Object.keys(cache).length})`);
 let done = 0, found = 0, i = 0;
-const save = () => writeFileSync(cachePath, JSON.stringify(cache));
+const save = () => {
+  // escritura atómica (tmp + rename) y tolerante a bloqueos de archivo
+  const p = fileURLToPath(cachePath);
+  try { writeFileSync(p + ".tmp", JSON.stringify(cache)); renameSync(p + ".tmp", p); }
+  catch (e) { console.warn("no se pudo guardar (se reintenta luego):", e.code); }
+};
 async function worker() {
   while (i < todo.length) {
     const row = todo[i++];
