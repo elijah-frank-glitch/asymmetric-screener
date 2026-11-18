@@ -1,0 +1,28 @@
+name: Actualización semanal de datos
+on:
+  schedule:
+    - cron: "0 6 * * 1" # lunes 06:00 UTC
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Descargar universo global
+        run: node scripts/fetch-universe.mjs
+      - name: Descripciones de empresas nuevas
+        run: node scripts/fetch-profiles.mjs || true
+      - name: Commit (dispara el redeploy en Vercel)
+        run: |
+          git config user.name "asymmetric-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/profiles.json
+          git commit -m "data: actualización semanal $(date -u +%F)" || git commit --allow-empty -m "data: actualización semanal $(date -u +%F)"
+          git push
