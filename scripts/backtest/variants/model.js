@@ -4,9 +4,12 @@
 // cambia horizonte, teoría, pesos o supuestos.
 // ============================================================================
 
-// COPIA para investigación (scripts/backtest/research.mjs). V = perillas de variante; con V por defecto = src/model.js.
-export const V = { revertBase: 0.25, revertCyc: 0.1, revertQual: 0.4, cycSpeedMult: 1.6 };
-export function setVariant(o) { Object.assign(V, { revertBase: 0.25, revertCyc: 0.1, revertQual: 0.4, cycSpeedMult: 1.6 }, o || {}); }
+// COPIA para investigación (scripts/backtest/research.mjs), re-sincronizada con src/model.js.
+// V = perillas de variante; con V por defecto el resultado es idéntico a src/model.js.
+//   dilMode: "fixed" (producción: 4% si quema caja, 0.5% si no, menos recompras) | "real" (usa shares_g3) | "blend" (50/50)
+const V_DEFAULT = { revertBase: 0.1, revertCyc: 0.1, revertQual: 0.25, cycSpeedMult: 1.6, dilMode: "fixed", dilMin: -6, dilMax: 25 };
+export const V = { ...V_DEFAULT };
+export function setVariant(o) { Object.assign(V, V_DEFAULT, o || {}); }
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const isNum = (x) => typeof x === "number" && Number.isFinite(x);
@@ -25,7 +28,7 @@ export const PRESETS = {
       mcap: 12, fcf_yield: 14, bm: 5, rev_g: 10, accel: 6, rev_fwd_g: 6, rev_cagr5: 6, gm: 8, roic: 8, roa: 4,
       rd_rev: 5, invest_gap: 5, off_low: 4, de: 4, piotroski: 3, altman: 3, rule40: 6,
     },
-    params: { gT: 4, peCap: 40, persistBase: 0.55, persistQual: 0.35, marginSpeed: 0.25, marketAnchor: 0.35, shrink: 0.25, convSpeed: 0.3, bullScale: 1, bearScale: 1 },
+    params: { gT: 4, peCap: 40, persistBase: 0.45, persistQual: 0.25, marginSpeed: 0.25, marketAnchor: 0.7, shrink: 0.25, convSpeed: 0.3, bullScale: 1, bearScale: 1 },
   },
   mayer: {
     name: "Twin Engines · 100 Baggers (Mayer)",
@@ -164,7 +167,7 @@ function projectScenario(c, H, P, sc) {
   let mT = Math.max(ind, gm != null ? 0.22 * gm : ind);
   mT = clamp(mT, 0.02, 0.35);
   // Márgenes extraordinarios revierten (más rápido si el negocio no tiene foso o es cíclico)
-  if (nm0 > mT) mT = mT + (nm0 - mT) * ((c.cyc ? V.revertCyc : V.revertBase) + V.revertQual * c.quality);
+  if (nm0 > mT) mT = mT + (nm0 - mT) * ((c.cyc ? V.revertCyc : V.revertBase) + V.revertQual * c.quality); // calibrado con el backtest EE.UU. 2011-2021
   else if (c.fin && nm0 > 0) mT = nm0;
   // La expansión de margen solo se acredita si hay economía unitaria que la respalde
   //    (en negocios de margen bruto bajo —comercializadoras, distribuidoras— casi no hay apalancamiento operativo)
@@ -180,6 +183,11 @@ function projectScenario(c, H, P, sc) {
   const burning = nm0 < 0 || (isNum(c.fcf_m) && c.fcf_m < 0);
   let dil = burning ? 0.04 : 0.005;
   if (isNum(c.buyback) && c.buyback > 0) dil -= clamp(c.buyback, 0, 6) / 100;
+  // Variante: dilución observada (CAGR 3a de acciones, ya neta de recompras) en vez del supuesto fijo
+  if (V.dilMode !== "fixed" && isNum(c.shares_g3)) {
+    const real = clamp(c.shares_g3, V.dilMin, V.dilMax) / 100;
+    dil = V.dilMode === "real" ? real : 0.5 * real + 0.5 * dil;
+  }
 
   // 4) Múltiplo de salida
   let peCap = P.peCap;
@@ -304,11 +312,11 @@ export function evaluate(c, H, P, score, withPaths = false) {
     [pr.ruin, RUIN_MULT - 1],
   ];
   const kRaw = kellyFraction(outcomes, 10);
-  // elog = E[ln M] anual (crecimiento geométrico esperado con f=1, comprar y mantener)
-  const elog = outcomes.reduce((s, [p, r]) => s + p * Math.log(Math.max(1 + r, 1e-6)), 0) / H;
   const growth = outcomes.reduce((s, [p, r]) => s + p * Math.log(1 + Math.min(kRaw, 1) * r), 0);
   return {
-    E, cagr, kelly: Math.min(kRaw, 1), kellyRaw: kRaw, growth, elog, probs: pr,
+    // elog = E[ln M]/H: crecimiento geométrico esperado. Ordenar por él mejoró el top del ranking en el backtest.
+    elog: outcomes.reduce((s, [p, r]) => s + p * Math.log(Math.max(1 + r, 1e-6)), 0) / H,
+    E, cagr, kelly: Math.min(kRaw, 1), kellyRaw: kRaw, growth, probs: pr,
     outcomes: outcomes.map(([p, r]) => [p, r + 1]),
     bull: last(bull), base: last(base), bear: last(bear),
     paths: withPaths ? { bull, base, bear, exp: expPath } : null,
@@ -319,57 +327,139 @@ export function evaluate(c, H, P, score, withPaths = false) {
 // Construcción del portafolio
 // ---------------------------------------------------------------------------
 export const WEIGHTING = {
-  kelly: { label: "Kelly de portafolio", desc: "Pesos que maximizan el crecimiento geométrico esperado (E[ln riqueza]) de la canasta completa, simulando 6,000 combinaciones de escenarios (alcista/base/bajista/ruina) por empresa. Invierte el 100%, sin apalancamiento." },
-  halfkelly: { label: "Medio Kelly", desc: "50% Kelly de portafolio + 50% igual ponderado. Los profesionales usan fracciones de Kelly porque el modelo siempre tiene error de estimación." },
+  kelly: { label: "Kelly de portafolio", desc: "Pesos que maximizan el crecimiento geométrico esperado (E[ln riqueza]) de la canasta completa, simulando 6,000 combinaciones de escenarios (alcista/base/bajista/ruina) con correlación entre empresas: ρ≈0.6 si son de la misma industria, ≈0.3 si comparten sector y ≈0.15 (mercado) en otro caso. Varias empresas de una misma industria cuentan como una apuesta parcialmente repetida y reciben menos peso conjunto. Invierte el 100%, sin apalancamiento." },
+  halfkelly: { label: "Medio Kelly", desc: "50% Kelly de portafolio (con correlaciones) + 50% igual ponderado. Los profesionales usan fracciones de Kelly porque el modelo siempre tiene error de estimación." },
   equal: { label: "Igual ponderado", desc: "1/N en cada empresa." },
   conviction: { label: "Por convicción (score ADN)", desc: "Peso proporcional al score ADN Multibagger." },
   return: { label: "Por retorno esperado", desc: "Peso proporcional al retorno esperado (CAGR)." },
 };
 
-// Kelly de portafolio: maximiza E[ln(Σ w_i · M_i)] con escenarios independientes por empresa.
-// Monte Carlo con semilla fija + gradiente exponenciado sobre el simplex (pesos ≥ 0, suma 1).
-export function kellyPortfolio(picks, samples = 6000, iters = 400) {
+// Correlación de los escenarios entre empresas (cópula gaussiana con factores anidados):
+// misma industria ρ = ind, mismo sector (otra industria) ρ = sec, resto ρ = mkt.
+export const DEFAULT_CORR = { mkt: 0.15, sec: 0.3, ind: 0.6 };
+export const INDEPENDENT = { mkt: 0, sec: 0, ind: 0 };
+
+// Inversa de la normal estándar (Acklam, error relativo < 1.2e-9)
+function invNorm(p) {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239];
+  const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+  const c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+  const tail = (q) => (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  if (p < 0.02425) return tail(Math.sqrt(-2 * Math.log(p)));
+  if (p > 1 - 0.02425) return -tail(Math.sqrt(-2 * Math.log(1 - p)));
+  const q = p - 0.5, r = q * q;
+  return ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+
+// Simula `samples` escenarios conjuntos. Devuelve un Float64Array plano [s*n + j] con el múltiplo final.
+// Cada empresa: X_j = a·Z_mercado + b·Z_sector + c·Z_industria + d·ε_j (varianza 1); el escenario sale de
+// comparar X_j con los cuantiles de sus probabilidades acumuladas (peor resultado = cola baja).
+// Empresas sin .ind/.sec solo comparten el factor de mercado. Semilla fija → determinista.
+export function simulateScenarios(picks, samples = 6000, seed = 12345, corr = DEFAULT_CORR) {
   const n = picks.length;
-  if (!n) return [];
-  let seed = 12345;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const M = Array.from({ length: samples }, () => new Float64Array(n));
-  for (let j = 0; j < n; j++) {
-    const oc = picks[j].outcomes;
-    for (let s = 0; s < samples; s++) {
-      let u = rnd(), acc = 0, v = oc[oc.length - 1][1];
-      for (const [p, m] of oc) { acc += p; if (u <= acc) { v = m; break; } }
-      M[s][j] = v;
+  const M = new Float64Array(samples * n);
+  if (!n) return M;
+  const rhoM = Math.min(1, Math.max(0, corr.mkt || 0));
+  const rhoS = Math.min(1, Math.max(rhoM, corr.sec || 0));
+  const rhoI = Math.min(1, Math.max(rhoS, corr.ind || 0));
+  const secId = new Map(), indId = new Map();
+  const idOf = (map, key) => { if (!map.has(key)) map.set(key, map.size); return map.get(key); };
+  const load = picks.map((p) => {
+    const hasS = p.sec != null && p.sec >= 0, hasI = p.ind != null && p.ind >= 0;
+    // la industria se agrupa dentro de su sector para que dos industrias homónimas en sectores distintos no se mezclen
+    const s = hasS ? idOf(secId, p.sec) : -1;
+    const k = hasI ? idOf(indId, `${hasS ? p.sec : ""}|${p.ind}`) : -1;
+    const b2 = hasS ? rhoS - rhoM : 0;
+    const c2 = hasI ? rhoI - rhoM - b2 : 0;
+    const d2 = Math.max(0, 1 - rhoM - b2 - c2);
+    const oc = p.outcomes.filter((o) => o[0] > 0).sort((x, y) => x[1] - y[1]);
+    const tot = oc.reduce((t, o) => t + o[0], 0) || 1;
+    const thr = new Float64Array(oc.length), mult = new Float64Array(oc.length);
+    let acc = 0;
+    oc.forEach((o, q) => { acc += o[0] / tot; thr[q] = q === oc.length - 1 ? Infinity : invNorm(acc); mult[q] = o[1]; });
+    return { s, k, a: Math.sqrt(rhoM), b: Math.sqrt(b2), c: Math.sqrt(c2), d: Math.sqrt(d2), thr, mult };
+  });
+  // PRNG mulberry32 + Box-Muller
+  let st = seed >>> 0;
+  const rnd = () => {
+    st = (st + 0x6d2b79f5) >>> 0;
+    let t = st;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (((t ^ (t >>> 14)) >>> 0) + 0.5) / 4294967296;
+  };
+  let spare = 0, hasSpare = false;
+  const gauss = () => {
+    if (hasSpare) { hasSpare = false; return spare; }
+    const r = Math.sqrt(-2 * Math.log(rnd())), th = 2 * Math.PI * rnd();
+    spare = r * Math.sin(th); hasSpare = true;
+    return r * Math.cos(th);
+  };
+  const zS = new Float64Array(secId.size), zI = new Float64Array(indId.size);
+  for (let s = 0, base = 0; s < samples; s++, base += n) {
+    const zM = gauss();
+    for (let q = 0; q < zS.length; q++) zS[q] = gauss();
+    for (let q = 0; q < zI.length; q++) zI[q] = gauss();
+    for (let j = 0; j < n; j++) {
+      const L = load[j];
+      let x = L.a * zM + L.d * gauss();
+      if (L.s >= 0) x += L.b * zS[L.s];
+      if (L.k >= 0) x += L.c * zI[L.k];
+      const thr = L.thr;
+      let q = 0;
+      while (x > thr[q]) q++;
+      M[base + j] = L.mult[q];
     }
   }
+  return M;
+}
+
+// Kelly de portafolio: maximiza E[ln(Σ w_i · M_i)] con escenarios correlacionados por industria/sector
+// (ver simulateScenarios). Gradiente exponenciado sobre el simplex (pesos ≥ 0, suma 1), con paso
+// grande que se reduce a la mitad si un paso empeora el objetivo; para al converger (Δw < 1e-5).
+// `corr` opcional: INDEPENDENT reproduce el supuesto anterior de escenarios independientes.
+export function kellyPortfolio(picks, samples = 6000, iters = 400, corr = DEFAULT_CORR) {
+  const n = picks.length;
+  if (!n) return [];
+  if (n === 1) return [1];
+  const M = simulateScenarios(picks, samples, 12345, corr);
   let w = new Float64Array(n).fill(1 / n);
-  const eta = 0.5;
+  let prevW = w.slice(), prevObj = -Infinity;
+  const g = new Float64Array(n);
+  let eta = 4;
   for (let it = 0; it < iters; it++) {
-    const g = new Float64Array(n);
-    for (let s = 0; s < samples; s++) {
-      let port = 0; const row = M[s];
-      for (let j = 0; j < n; j++) port += w[j] * row[j];
-      for (let j = 0; j < n; j++) g[j] += row[j] / port;
+    g.fill(0);
+    let obj = 0;
+    for (let s = 0, base = 0; s < samples; s++, base += n) {
+      let port = 0;
+      for (let j = 0; j < n; j++) port += w[j] * M[base + j];
+      obj += Math.log(port);
+      const inv = 1 / port;
+      for (let j = 0; j < n; j++) g[j] += M[base + j] * inv;
     }
-    let z = 0;
-    for (let j = 0; j < n; j++) { w[j] *= Math.exp((eta * g[j]) / samples - eta); z += w[j]; }
-    for (let j = 0; j < n; j++) w[j] /= z;
+    obj /= samples;
+    if (obj < prevObj - 1e-12 && eta > 0.1) { w = prevW.slice(); eta /= 2; continue; } // paso demasiado largo
+    prevObj = obj; prevW = w.slice();
+    let z = 0, maxD = 0, gMax = -Infinity;
+    for (let j = 0; j < n; j++) { g[j] = (eta * g[j]) / samples; if (g[j] > gMax) gMax = g[j]; }
+    for (let j = 0; j < n; j++) { g[j] = w[j] * Math.exp(g[j] - gMax); z += g[j]; } // normalizado: sin overflow
+    for (let j = 0; j < n; j++) { const nw = g[j] / z; maxD = Math.max(maxD, Math.abs(nw - w[j])); w[j] = nw; }
+    if (maxD < 1e-5) break; // convergió (lo que falta movería los pesos < ~0.05 pp)
   }
   return Array.from(w);
 }
 
-// Estadísticos del portafolio por Monte Carlo: percentiles del múltiplo final
-export function portfolioDistribution(picks, weights, samples = 6000) {
-  let seed = 999;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+// Estadísticos del portafolio por Monte Carlo (mismas correlaciones): percentiles del múltiplo final
+export function portfolioDistribution(picks, weights, samples = 6000, corr = DEFAULT_CORR) {
+  const n = picks.length;
+  const M = simulateScenarios(picks, samples, 999, corr);
   const out = new Float64Array(samples);
-  for (let s = 0; s < samples; s++) {
+  for (let s = 0, base = 0; s < samples; s++, base += n) {
     let v = 0;
-    picks.forEach((pk, j) => {
-      let u = rnd(), acc = 0, m = pk.outcomes[pk.outcomes.length - 1][1];
-      for (const [p, mm] of pk.outcomes) { acc += p; if (u <= acc) { m = mm; break; } }
-      v += weights[j] * m;
-    });
+    for (let j = 0; j < n; j++) v += weights[j] * M[base + j];
     out[s] = v;
   }
   out.sort();
@@ -382,18 +472,20 @@ export function portfolioDistribution(picks, weights, samples = 6000) {
   return { mean, p10: q(0.1), p25: q(0.25), median: q(0.5), p75: q(0.75), p90: q(0.9), pLoss, p2x, p5x, p10x };
 }
 
-export function buildWeights(picks, method, maxW = 0.4) {
+// picks: [{ outcomes, score, cagr, ind?, sec? }]. opts.corr opcional (por defecto DEFAULT_CORR).
+export function buildWeights(picks, method, maxW = 0.4, opts = {}) {
   const n = picks.length;
   if (!n) return [];
   let raw;
   const eq = picks.map(() => 1 / n);
   const norm = (a) => { const s = a.reduce((x, y) => x + y, 0); return s > 0 ? a.map((x) => x / s) : eq; };
+  const corr = opts.corr || DEFAULT_CORR;
   switch (method) {
     case "equal": raw = eq; break;
     case "conviction": raw = norm(picks.map((p) => Math.max(p.score, 0.01))); break;
     case "return": raw = norm(picks.map((p) => Math.max(p.cagr, 0.001))); break;
-    case "halfkelly": { const k = kellyPortfolio(picks); raw = k.map((x, i) => 0.5 * x + 0.5 * eq[i]); break; }
-    default: raw = kellyPortfolio(picks);
+    case "halfkelly": { const k = kellyPortfolio(picks, 6000, 400, corr); raw = k.map((x, i) => 0.5 * x + 0.5 * eq[i]); break; }
+    default: raw = kellyPortfolio(picks, 6000, 400, corr);
   }
   // tope por posición con redistribución iterativa
   const cap = Math.max(maxW, 1 / n);

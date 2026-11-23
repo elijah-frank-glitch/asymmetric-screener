@@ -3,6 +3,7 @@
 // unit: usd | pct | x | num | score | days
 // better: 1 = más alto es mejor, -1 = más bajo es mejor, 0 = neutral
 // model: true = la usa el modelo por defecto "ADN Multibagger"
+// srcLabel: fuente legible para métricas calculadas fuera de TradingView (Yahoo Finance, SEC)
 export const CATEGORIES = [
   "Tamaño y acciones",
   "Valuación",
@@ -13,6 +14,7 @@ export const CATEGORIES = [
   "Eficiencia",
   "Dividendos y recompras",
   "Calidad y scores",
+  "Gobierno y señales",
   "Consenso de analistas",
   "Desempeño de mercado",
 ];
@@ -122,6 +124,17 @@ export const METRICS = [
   { id: "piotroski", tv: "piotroski_f_score_ttm", label: "Piotroski F-Score", cat: "Calidad y scores", unit: "score", better: 1, model: true, desc: "0-9. Fortaleza fundamental (rentabilidad, apalancamiento, eficiencia). ≥7 = fuerte." },
   { id: "altman", tv: "altman_z_score_ttm", label: "Altman Z-Score", cat: "Calidad y scores", unit: "score", better: 1, model: true, desc: "Riesgo de quiebra. <1.8 zona de peligro, >3 zona segura." },
   { id: "beneish", tv: "beneish_m_score_ttm", label: "Beneish M-Score", cat: "Calidad y scores", unit: "score", better: -1, desc: "Probabilidad de manipulación contable. > −1.78 = alerta." },
+
+  // ---------- Gobierno y señales (Yahoo Finance: data/signals.json; SEC: data/dilution_us.json — ver docs/SIGNALS_CONTRACT.md)
+  { id: "insider_pct", calc: true, srcLabel: "Yahoo Finance (majorHoldersBreakdown)", label: "Propiedad de insiders", cat: "Gobierno y señales", unit: "pct", better: 1, desc: "% de las acciones en manos de directivos y consejeros. Skin in the game: Chris Mayer (100 Baggers) encontró que muchos multibaggers tenían dueños-operadores con participaciones grandes, que piensan en décadas y asignan capital como accionistas, no como empleados." },
+  { id: "inst_pct", calc: true, srcLabel: "Yahoo Finance (majorHoldersBreakdown)", label: "Propiedad institucional", cat: "Gobierno y señales", unit: "pct", better: 0, desc: "% en manos de fondos e instituciones. Neutral: baja propiedad institucional = empresa poco descubierta (espacio para que lleguen compradores grandes); alta = validación pero menos sorpresa posible." },
+  { id: "short_pct", calc: true, srcLabel: "Yahoo Finance (defaultKeyStatistics)", label: "Short interest (% del float)", cat: "Gobierno y señales", unit: "pct", better: -1, desc: "% del float vendido en corto. Mide el escepticismo de la multitud informada: un short interest alto suele anticipar bajo rendimiento (aunque a veces alimenta short squeezes). Mayormente disponible para EE.UU." },
+  { id: "founder", calc: true, srcLabel: "Yahoo Finance (assetProfile: companyOfficers)", label: "Dirigida por fundador (1/0)", cat: "Gobierno y señales", unit: "num", better: 1, desc: "1 si algún directivo listado tiene \"founder\"/\"co-founder\" en su cargo. Bain & Company (The Founder's Mentality) halló que las empresas del S&P 500 lideradas por fundadores generaron ~3.1x más retorno total que el resto en 15 años; Mayer también destaca al dueño-fundador como rasgo común de los 100-baggers." },
+  { id: "eps_rev30", calc: true, srcLabel: "Yahoo Finance (earningsTrend 0y)", label: "Revisión EPS 30 días", cat: "Gobierno y señales", unit: "pct", better: 1, desc: "Cambio % del EPS estimado por analistas para el año fiscal en curso vs. hace 30 días. Momentum de utilidades: las revisiones al alza tienden a persistir y anticipan sorpresas positivas (los analistas ajustan lento)." },
+  { id: "eps_rev90", calc: true, srcLabel: "Yahoo Finance (earningsTrend 0y)", label: "Revisión EPS 90 días", cat: "Gobierno y señales", unit: "pct", better: 1, desc: "Cambio % del EPS estimado del año en curso vs. hace 90 días. Versión más lenta y estable del momentum de revisiones." },
+  { id: "rev_breadth", calc: true, srcLabel: "Yahoo Finance (earningsTrend 0y)", label: "Amplitud de revisiones (up−down)/(up+down)", cat: "Gobierno y señales", unit: "x", better: 1, desc: "De −1 a +1: proporción neta de analistas que subieron vs. bajaron su estimado de EPS en 30 días. Mide si el cambio de expectativas es generalizado o lo mueve un solo analista." },
+  { id: "shares_g1", calc: true, srcLabel: "SEC EDGAR (dei / acciones diluidas)", label: "Dilución 1 año (EE.UU.)", cat: "Gobierno y señales", unit: "pct", better: -1, desc: "Cambio % anual del número de acciones (solo EE.UU.). La dilución destruye el compounding por acción: si la empresa crece 20% pero emite 10% más acciones, el accionista solo captura ~9%. Negativo = recompras." },
+  { id: "shares_g3", calc: true, srcLabel: "SEC EDGAR (dei / acciones diluidas)", label: "Dilución anual 3 años (EE.UU.)", cat: "Gobierno y señales", unit: "pct", better: -1, desc: "CAGR del número de acciones en 3 años (solo EE.UU.). Emisión crónica de acciones (SBC alto, ampliaciones para financiar pérdidas) es uno de los mayores frenos a un multibagger." },
 
   // ---------- Consenso de analistas
   { id: "pt_avg", tv: "price_target_average", label: "Precio objetivo promedio", cat: "Consenso de analistas", unit: "num", better: 0, desc: "Precio objetivo medio de analistas (moneda de cotización)." },

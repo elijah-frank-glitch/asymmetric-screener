@@ -47,6 +47,23 @@ const derive = {
   liq_usd: (i) => (C.avg_vol[i] > 0 && C.mcap[i] > 0 && C.shares[i] > 0 ? C.avg_vol[i] * (C.mcap[i] / C.shares[i]) : null),
 };
 for (const [id, fn] of Object.entries(derive)) cols[id] = Array.from({ length: n }, (_, i) => fn(i));
+
+// ---------- señales cualitativas (docs/SIGNALS_CONTRACT.md): Yahoo (global) + SEC (dilución EE.UU.), por símbolo TradingView
+const readOpt = (f) => { try { return existsSync(new URL(f, root)) ? JSON.parse(readFileSync(new URL(f, root))) : null; } catch (e) { console.warn("⚠ no se pudo leer " + f + ":", e.message); return null; } };
+const signals = readOpt("data/signals.json")?.rows || {};
+const dilution = readOpt("data/dilution_us.json")?.rows || {};
+const symAll = col("symbol");
+const pick = (src, k) => symAll.map((s) => num(src[s]?.[k]));
+cols.insider_pct = pick(signals, 0);
+cols.inst_pct = pick(signals, 1);
+cols.short_pct = pick(signals, 2);
+cols.founder = pick(signals, 3);
+cols.eps_rev30 = pick(signals, 4);
+cols.eps_rev90 = pick(signals, 5);
+cols.rev_breadth = symAll.map((s) => { const up = num(signals[s]?.[6]), dn = num(signals[s]?.[7]); return up != null && dn != null && up + dn > 0 ? (up - dn) / (up + dn) : null; });
+cols.shares_g1 = pick(dilution, 0);
+cols.shares_g3 = pick(dilution, 1);
+const covSig = { signals: Object.keys(signals).length, dilution: Object.keys(dilution).length };
 // net_cash es entrada del modelo (no está en el catálogo como métrica visible por separado)
 const allIds = [...METRICS.map((m) => m.id), "net_cash"];
 
@@ -80,7 +97,7 @@ if (existsSync(out)) rmSync(out, { recursive: true });
 mkdirSync(new URL("m/", out), { recursive: true });
 mkdirSync(new URL("rows/", out), { recursive: true });
 
-const catalog = METRICS.map(({ tv, ...m }) => ({ ...m, src: tv ? "TradingView: " + tv : "Calculada", core: CORE_IDS.includes(m.id) }));
+const catalog = METRICS.map(({ tv, srcLabel, ...m }) => ({ ...m, src: tv ? "TradingView: " + tv : srcLabel || "Calculada", core: CORE_IDS.includes(m.id) }));
 const meta = {
   rowsBlock: 500,
   fetchedAt: uni.fetchedAt, builtAt: new Date().toISOString(), n,
@@ -114,4 +131,4 @@ for (let k = 0; k * 500 < n; k++) {
 }
 // Columnas completas para el Excel
 writeFileSync(new URL("data/derived.json", root), JSON.stringify({ cols: Object.fromEntries(allIds.map((id) => [id, cols[id].map(r4)])) }));
-console.log(`OK build-data: ${n} empresas, core ${coreIds.length} métricas, ${allIds.length - coreIds.length} métricas lazy, descripciones ${meta.descCoverage}`);
+console.log(`OK build-data: ${n} empresas, core ${coreIds.length} métricas, ${allIds.length - coreIds.length} métricas lazy, descripciones ${meta.descCoverage}, señales Yahoo ${covSig.signals}, dilución SEC ${covSig.dilution}`);

@@ -153,5 +153,5 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
 }
 
 function settingsPresetName(s) {
-  return { adn: "ADN Multibagger", mayer: "Twin Engines (Mayer)", value: "Valor + FCF (Yartseva)", disrupt: "Hipercrecimiento / Disrupción", quality: "Calidad compuesta", custom: "Personalizado" }[s.preset] || s.preset;
+  return { adn: "ADN Multibagger", signals: "ADN + Señales cualitativas", mayer: "Twin Engines (Mayer)", value: "Valor + FCF (Yartseva)", disrupt: "Hipercrecimiento / Disrupción", quality: "Calidad compuesta", custom: "Personalizado" }[s.preset] || s.preset;
 }

@@ -48,3 +48,8 @@ export function fmtByUnit(x, unit) {
   }
 }
 export const cagrClass = (c) => (!ok(c) ? "" : c >= 0.3 ? "pos3" : c >= 0.15 ? "pos2" : c >= 0.05 ? "pos1" : c >= 0 ? "neu" : "neg");
+// Formato por métrica: casos especiales por id (p. ej. founder 1/0 → Sí/No), si no, por unidad
+export function fmtMetric(x, id, unit) {
+  if (id === "founder") return ok(x) ? (x >= 0.5 ? "Sí" : "No") : "—";
+  return fmtByUnit(x, unit);
+}

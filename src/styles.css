@@ -200,3 +200,15 @@ table.simple tr.tot td { font-weight: 700; border-top: 1px solid var(--line2); }
   nav.tabs { max-width: 100%; min-width: 0; overflow-x: auto; scrollbar-width: none; }
   nav.tabs button { white-space: nowrap; flex: none; padding: 6px 10px; }
 }
+
+/* señales cualitativas */
+.sigchips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.sigchip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line2); background: var(--panel2); color: var(--muted); cursor: help; }
+.sigchip.good { border-color: rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.08); color: var(--accent); }
+.sigchip.bad { border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.08); color: var(--neg); }
+.siggrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 18px; }
+.sigrow { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 12px; gap: 10px; cursor: help; }
+.sigrow > span { color: var(--muted); }
+.sigrow b { font-family: var(--mono); font-weight: 500; text-align: right; }
+.sigrow b em { font-style: normal; font-family: var(--sans); font-size: 10.5px; font-weight: 400; margin-left: 6px; }
+@media (max-width: 560px) { .siggrid { grid-template-columns: 1fr; } }

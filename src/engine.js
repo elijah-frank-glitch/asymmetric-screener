@@ -4,7 +4,7 @@ import { percentileRanks, computeScores, evaluate, PRESETS, INFLATION } from "./
 // Métricas que el modelo necesita siempre (además de las de los pesos)
 export const MODEL_INPUTS = [
   "mcap", "revenue", "rev_g", "rev_g_q", "rev_cagr5", "rev_fwd_g", "gm", "nm", "fcf_m", "ebitda_m",
-  "roic", "rd_rev", "net_cash", "div_yield", "buyback", "liq_usd", "ps", "pe", "altman", "runway",
+  "roic", "rd_rev", "net_cash", "div_yield", "buyback", "liq_usd", "ps", "pe", "altman", "runway", "shares_g3",
 ];
 export const CORE_IDS = [
   ...new Set([...MODEL_INPUTS, ...Object.values(PRESETS).flatMap((p) => Object.keys(p.weights))]),

@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sharesGrowth } from "./shares-growth.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const RAW = resolve(ROOT, "data/backtest/raw");
@@ -177,7 +178,11 @@ function sharesToday(p, cik, y, dMs, f) {
 // ---------- 5) Snapshots
 const COLS = ["mcap", "revenue", "rev_g", "rev_cagr5", "gm", "nm", "fcf_m", "ebitda_m", "roic", "roa", "roe", "rd_rev",
   "net_cash", "div_yield", "buyback", "liq_usd", "ps", "pe", "pb", "ev_ebitda", "fcf_yield", "bm", "de", "invest_gap",
-  "rule40", "gp_assets", "gp_g", "payout", "altman", "runway", "off_low", "price", "cr"];
+  "rule40", "gp_assets", "gp_g", "payout", "altman", "runway", "off_low", "price", "cr", "shares_g1", "shares_g3"];
+// Dilución histórica (shares-growth.mjs): frames crudos por año
+const deiF = (cik) => (Y) => F.EntityCommonStockSharesOutstanding[Y]?.get(cik) || null;
+const LISTED_FLOOR = Date.parse("2009-03-01T00:00:00Z"); // los precios de Yahoo empiezan en 2009-01
+const dilF = (cik) => (Y) => F.WeightedAverageNumberOfDilutedSharesOutstanding[Y]?.get(cik) || null;
 const r4 = (x) => (okn(x) ? Number(x.toPrecision(4)) : null);
 const snapshots = {}, fwd = {}, partial = {}, spy = {}, coverage = {};
 let dropped = 0, sharesSrc = { dei: 0, dil: 0 };
@@ -257,6 +262,15 @@ for (const date of DATES) {
       v.altman = (1.2 * (f.ca - f.cl) + 1.4 * f.re + 3.3 * f.op + 1.0 * rev) / f.assets + 0.6 * (mcap / tl);
     v.runway = fcf == null ? null : fcf >= 0 ? 50 : okn(f.cash) ? Math.min(50, f.cash / -fcf) : null;
     v.cr = f.cl > 0 && okn(f.ca) ? f.ca / f.cl : null;
+    // Cambio % anual de acciones (1a y CAGR 3a), ajustado por splits de Yahoo. Point-in-time: portada visible a la
+    // fecha (CY(y-1) o CY(y-2)); diluidas del año fundamental Y (ya visible: fin + 75 días)
+    let deiY = null;
+    for (const Yd of [y - 1, y - 2]) { const e = F.EntityCommonStockSharesOutstanding[Yd]?.get(cik); if (e && e[1] <= dMs && e[0] > 0) { deiY = Yd; break; } }
+    // listedMs: primera barra de precios si es posterior al inicio del historial de Yahoo (IPO / de-SPAC / relisting)
+    const listedMs = p.t[0] * 1000 > LISTED_FLOOR ? p.t[0] * 1000 : null;
+    const sg = sharesGrowth({ dei: deiF(cik), dil: dilF(cik), splits: p.splits, deiY, dilY: f.dil > 0 ? Y : null, listedMs, now: NOW });
+    v.shares_g1 = sg.g1; v.shares_g3 = sg.g3;
+    if (sg.g3 != null) cov.sharesG3 = (cov.sharesG3 || 0) + 1;
     for (const [k, x] of Object.entries(v)) if (k !== "price" && k !== "off_low" && k !== "liq_usd") C[k][i] = r4(x);
   }
   snapshots[date] = { fyEnd, cols: C };
@@ -268,7 +282,7 @@ for (const date of DATES) {
   }
   partial[date] = pa; spy[date] = sp;
   coverage[date] = cov;
-  console.log(`${date}: cotizan ${cov.listed}, con fundamentales ${cov.fundamentals}, con mcap ${cov.mcap}, con liquidez ${cov.liq} | SPY 1/3/5a ${sp[1]} ${sp[3]} ${sp[5]}${pa[5] ? " (5a parcial)" : ""}`);
+  console.log(`${date}: cotizan ${cov.listed}, con fundamentales ${cov.fundamentals}, con mcap ${cov.mcap}, con liquidez ${cov.liq}, con shares_g3 ${cov.sharesG3 || 0} | SPY 1/3/5a ${sp[1]} ${sp[3]} ${sp[5]}${pa[5] ? " (5a parcial)" : ""}`);
 }
 
 const panel = {
@@ -280,6 +294,7 @@ const panel = {
     "Acciones: dei EntityCommonStockSharesOutstanding (portada) ajustadas por splits; si faltan o parecen de una sola clase (< 60% de las diluidas) se usan las diluidas promedio. mcap = acciones × precio (ambos en base de hoy) = precio histórico sin ajustar × acciones de la época. Se descarta mcap si P/S > 1000 o < 0.005, P/E < 1 o FCF/mcap > 150% o < −300% (casi siempre acciones mal medidas: ADS con ratio ≠ 1, multiclase, Up-C).",
     "Precios mensuales de Yahoo Finance: precio = último cierre mensual en o antes de la fecha; off_low usa el mínimo de los 12 cierres mensuales (no el mínimo intradía de 52 semanas); liq_usd ≈ volumen mensual promedio de 3 meses / 21 × precio (aproximado).",
     "Retornos hacia adelante con adjclose (dividendos + splits) de mes a mes; si el horizonte no ha terminado se mide hasta el último mes disponible (partial = true); null si el historial de precios termina antes.",
+    "shares_g1 / shares_g3: cambio % anual de acciones (1 año y CAGR 3 años; + = dilución, − = recompras). Portada dei (visible a la fecha) o diluidas promedio del año fundamental, comparando dentro de la misma fuente (si discrepan > 10 pp/año se usan diluidas). Base de hoy con splits reales de Yahoo (se ignoran los 'splits' de spin-off con ratios no racionales); saltos residuales ≈ múltiplo entero ≥ 1.8x / ≤ 0.55x se tratan como split no ajustado; ratios fuera de [1/8, 8] → null. Recorte: g1 ∈ [−30, 150], g3 ∈ [−20, 80] %/año.",
     "Sin SIC (no está en el mapa de tickers): todas las empresas en una sola industria. Sin consenso, trimestrales, Piotroski ni Sloan: null.",
   ],
 };

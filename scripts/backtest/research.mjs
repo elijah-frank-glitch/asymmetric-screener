@@ -1,5 +1,5 @@
 // Investigación de variantes del modelo sobre el panel del backtest (NO escribe public/backtest.json).
-// Usa COPIAS de model/engine en scripts/backtest/variants/ (src/ no se toca). Misma construcción de D que run-backtest.mjs.
+// Usa COPIAS de model/engine en scripts/backtest/variants/ (src/ no se toca; re-sincronizadas con src → V por defecto = producción). Misma construcción de D que run-backtest.mjs.
 //   node scripts/backtest/research.mjs [--only base,elog,...] [--json out.json]
 // Protocolo: TRAIN = rebalanceos 2011–2017 (5a y 1a); TEST = 2018–2021 a 5a, y 2018–2024 a 1a (extra fuera de muestra).
 // Se eligen variantes SOLO con TRAIN.
@@ -65,6 +65,13 @@ const MODEL_VARIANTS = {
   peCap25: { params: { peCap: 25 } },
   shrink50: { params: { shrink: 0.5 } },
   // combinación elegida en TRAIN: persistLow + anchor70 + revertStrong
+  // Dilución (shares_g3 del panel): peso en el score ADN (mejor = menos dilución) y dilución observada en projectScenario
+  sg3w5: { weights: { shares_g3: 5 }, dirs: { shares_g3: -1 } },
+  sg3w8: { weights: { shares_g3: 8 }, dirs: { shares_g3: -1 } },
+  sg3w12: { weights: { shares_g3: 12 }, dirs: { shares_g3: -1 } },
+  dilReal: { V: { dilMode: "real" } },
+  dilBlend: { V: { dilMode: "blend" } },
+  w8blend: { weights: { shares_g3: 8 }, dirs: { shares_g3: -1 }, V: { dilMode: "blend" } }, // combinación elegida en TRAIN
   combo: { params: { persistBase: 0.45, persistQual: 0.25, marketAnchor: 0.7 }, V: { revertBase: 0.1, revertCyc: 0.0, revertQual: 0.25, cycSpeedMult: 2.5 } },
 };
 
@@ -81,7 +88,7 @@ function records(mv) {
   for (const date of panel.dates) {
     clearRankCache(); clearConfidenceCache();
     const { idx, D } = buildD(date, dirs);
-    const R = runModel(D, { weights: P.weights, params, horizon: H_MODEL });
+    const R = runModel(D, { weights: { ...P.weights, ...(spec.weights || {}) }, params, horizon: H_MODEL });
     const F = panel.fwd[date] || {};
     const rs = [];
     for (let j = 0; j < D.n; j++) {
@@ -89,7 +96,7 @@ function records(mv) {
       const c = (k) => fin(D.cols[k]?.[j]);
       rs.push({
         t: D.ticker[j], cagr: R.cagr[j], score: R.score[j], elog: R.elog[j], growth: R.growth[j], conf: R.conf[j],
-        nm: c("nm"), fcf_m: c("fcf_m"), pe: c("pe"), ps: c("ps"), rev_g: c("rev_g"), mcap: c("mcap"), off_low: c("off_low"),
+        nm: c("nm"), fcf_m: c("fcf_m"), pe: c("pe"), ps: c("ps"), rev_g: c("rev_g"), mcap: c("mcap"), off_low: c("off_low"), sg3: c("shares_g3"),
         f1: fin(F[1]?.[idx[j]]), f5: fin(F[5]?.[idx[j]]),
       });
     }
@@ -123,6 +130,8 @@ const GATES = {
   noTrap: (r) => !(r.pe != null && r.pe > 0 && r.pe < 4) && !(r.ps != null && r.ps < 0.1) && !(r.rev_g != null && r.rev_g > 100),
   noMicro: (r) => r.mcap >= 3e8,
   smallOnly: (r) => r.mcap < 2e9,
+  dil10: (r) => !(r.sg3 > 10), // excluye diluidores > 10%/año (CAGR 3a); sin dato pasa
+  dil5: (r) => !(r.sg3 > 5),
 };
 
 let VARIANTS = [
@@ -156,6 +165,16 @@ let VARIANTS = [
   { id: "comboA", m: "combo", key: "elog" },
   { id: "comboA_cagr", m: "combo", key: "cagr" },
   { id: "comboA_fold", m: "combo", key: "fold15" },
+  // Dilución (producción actual = ranking por elog con el preset ADN de src)
+  { id: "prod", m: "base", key: "elog" },
+  { id: "sg3w5", m: "sg3w5", key: "elog" },
+  { id: "sg3w8", m: "sg3w8", key: "elog" },
+  { id: "sg3w12", m: "sg3w12", key: "elog" },
+  { id: "gate10", m: "base", key: "elog", gates: ["dil10"] },
+  { id: "gate5", m: "base", key: "elog", gates: ["dil5"] },
+  { id: "dilReal", m: "dilReal", key: "elog" },
+  { id: "dilBlend", m: "dilBlend", key: "elog" },
+  { id: "w8blend", m: "w8blend", key: "elog" },
 ];
 // Combinaciones (definidas DESPUÉS de mirar solo TRAIN; ver reporte)
 const COMBOS = JSON.parse(arg("--combos") || "[]");
@@ -224,7 +243,7 @@ const WINDOWS = [["TRAIN5", 2011, 2017, 5], ["TEST5", 2018, 2021, 5], ["TRAIN1",
 const res = {};
 for (const v of VARIANTS) {
   res[v.id] = {};
-  for (const [w, a, b, h] of WINDOWS) { v.basePer = res.base?.[w]?.per; res[v.id][w] = evalVariant(v, a, b, h); }
+  for (const [w, a, b, h] of WINDOWS) { v.basePer = (res.prod || res.base)?.[w]?.per; res[v.id][w] = evalVariant(v, a, b, h); }
 }
 const pc = (x, d = 1) => (ok(x) ? (x * 100).toFixed(d).padStart(6) : "    — ");
 const f2 = (x) => (ok(x) ? x.toFixed(3).padStart(6) : "    — ");

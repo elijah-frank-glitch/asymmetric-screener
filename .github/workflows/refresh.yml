@@ -8,7 +8,7 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,11 +23,14 @@ jobs:
         run: node scripts/snapshot-predictions.mjs
       - name: Descripciones de empresas nuevas
         run: node scripts/fetch-profiles.mjs || true
+      - name: Señales cualitativas (insiders, short interest, fundador, revisiones EPS)
+        run: node scripts/fetch-signals.mjs --budgetMin 90 || true
       - name: Commit (dispara el redeploy en Vercel)
         run: |
           git config user.name "asymmetric-bot"
           git config user.email "actions@users.noreply.github.com"
           git add data/profiles.json
+          git add data/signals.json data/dilution_us.json 2>/dev/null || git add data/signals.json || true
           git add data/predictions
           git commit -m "data: actualización semanal $(date -u +%F)" || git commit --allow-empty -m "data: actualización semanal $(date -u +%F)"
           git push

@@ -130,7 +130,8 @@ function spearman(x, y) {
 }
 
 // ---------- 4) Correr el modelo fecha por fecha
-const THEORIES = Object.entries(PRESETS).filter(([id]) => id !== "custom");
+// "signals" se excluye: sus señales (insiders, revisiones…) no existen en el histórico, solo con su valor de hoy.
+const THEORIES = Object.entries(PRESETS).filter(([id]) => id !== "custom" && id !== "signals");
 const byDate = Object.fromEntries(THEORIES.map(([id]) => [id, Object.fromEntries(HORIZONS.map((h) => [h, []]))]));
 const ic = Object.fromEntries(THEORIES.map(([id]) => [id, { 1: [], 5: [] }]));
 const calPool = Object.fromEntries(THEORIES.map(([id]) => [id, []])); // [expCagr, retorno 5a] de fechas no parciales

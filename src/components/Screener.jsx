@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
-import { fmtUsd, fmtPct, fmtX, fmtByUnit, cagrClass } from "../format.js";
+import { fmtUsd, fmtPct, fmtX, fmtMetric, cagrClass } from "../format.js";
 
 const ROW = 34;
 const COLORS = ["#34d399", "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb923c", "#4ade80"];
@@ -30,7 +30,7 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
       { k: "conf", l: "Confianza", w: "88px", num: true, v: (i) => R.conf[i] },
       { k: "kelly", l: "Kelly f*", w: "80px", num: true, v: (i) => R.kelly[i] },
     ];
-    const extra = settings.columns.filter((id) => cat[id]).map((id) => ({ k: id, l: cat[id].label, w: "120px", num: true, v: (i) => D.cols[id]?.[i], f: (x) => fmtByUnit(x, cat[id].unit), metric: true }));
+    const extra = settings.columns.filter((id) => cat[id]).map((id) => ({ k: id, l: cat[id].label, w: "120px", num: true, v: (i) => D.cols[id]?.[i], f: (x) => fmtMetric(x, id, cat[id].unit), metric: true }));
     return [...base, ...extra];
   }, [D, R, meta, settings.columns, cat, H, dataVer]);
 

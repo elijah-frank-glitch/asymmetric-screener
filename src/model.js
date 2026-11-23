@@ -23,6 +23,18 @@ export const PRESETS = {
     },
     params: { gT: 4, peCap: 40, persistBase: 0.45, persistQual: 0.25, marginSpeed: 0.25, marketAnchor: 0.7, shrink: 0.25, convSpeed: 0.3, bullScale: 1, bearScale: 1 },
   },
+  signals: {
+    name: "ADN + Señales cualitativas",
+    short: "Señales",
+    desc:
+      "La teoría ADN más las señales que no están en los estados financieros: dueños con piel en el juego (insiders y fundador al mando, como en los 100-baggers de Mayer), analistas subiendo sus estimados (momentum de utilidades) y bajo short interest. Estas señales solo existen con su valor de hoy, así que NO están validadas en el backtest: el Track record las mide semana a semana.",
+    weights: {
+      mcap: 12, fcf_yield: 14, bm: 5, rev_g: 10, accel: 6, rev_fwd_g: 6, rev_cagr5: 6, gm: 8, roic: 8, roa: 4,
+      rd_rev: 5, invest_gap: 5, off_low: 4, de: 4, piotroski: 3, altman: 3, rule40: 6,
+      insider_pct: 8, founder: 5, eps_rev30: 6, rev_breadth: 4, short_pct: 3,
+    },
+    params: { gT: 4, peCap: 40, persistBase: 0.45, persistQual: 0.25, marginSpeed: 0.25, marketAnchor: 0.7, shrink: 0.25, convSpeed: 0.3, bullScale: 1, bearScale: 1 },
+  },
   mayer: {
     name: "Twin Engines · 100 Baggers (Mayer)",
     short: "Mayer",
@@ -176,6 +188,9 @@ function projectScenario(c, H, P, sc) {
   const burning = nm0 < 0 || (isNum(c.fcf_m) && c.fcf_m < 0);
   let dil = burning ? 0.04 : 0.005;
   if (isNum(c.buyback) && c.buyback > 0) dil -= clamp(c.buyback, 0, 6) / 100;
+  // Dilución observada (CAGR 3a de acciones, neta de recompras; SEC, solo EE.UU.) mezclada 50/50 con el supuesto fijo.
+  // Validada en el backtest EE.UU. (variante dilBlend): mejora IC y calibración en TRAIN y TEST.
+  if (isNum(c.shares_g3)) dil = 0.5 * dil + 0.5 * clamp(c.shares_g3, -6, 25) / 100;
 
   // 4) Múltiplo de salida
   let peCap = P.peCap;

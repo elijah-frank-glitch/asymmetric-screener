@@ -34,7 +34,7 @@ const HEAD = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: 
 
 // ---------- 1) Universo
 const ws = wb.addWorksheet("Universo", { views: [{ state: "frozen", xSplit: 2, ySplit: 1 }] });
-const keyMetrics = ["mcap", "revenue", "rev_g", "rev_cagr5", "gm", "nm", "roic", "fcf_yield", "ps", "pe", "de"];
+const keyMetrics = ["mcap", "revenue", "rev_g", "rev_cagr5", "gm", "nm", "roic", "fcf_yield", "ps", "pe", "de", "insider_pct", "eps_rev30", "shares_g3"];
 const cat = Object.fromEntries(meta.catalog.map((m) => [m.id, m]));
 ws.columns = [
   { header: "Ranking modelo (5a)", key: "rank", width: 10 },
@@ -76,7 +76,7 @@ for (const i of order) {
     score: r2(R.score[i] * 100, 0), conf: r2(R.conf[i] * 100, 0),
     cagr: r2(R.cagr[i] * 100, 1), E: r2(R.E[i]), bull: r2(R.bull[i]), base: r2(R.base[i]), bear: r2(R.bear[i]), kelly: r2(R.kelly[i] * 100, 0),
   };
-  for (const id of keyMetrics) row[id] = r2(D.cols[id][i], cat[id].unit === "usd" ? 0 : 2);
+  for (const id of keyMetrics) row[id] = r2(D.cols[id]?.[i], cat[id].unit === "usd" ? 0 : 2);
   ws.addRow(row).commit();
 }
 ws.commit();
@@ -116,7 +116,7 @@ wsP.addRow({ k: "Teoría", v: P.name, d: P.desc }).commit();
 wsP.addRow({ k: "Horizonte (años)", v: H, d: "En la web-app puede ser cualquier plazo de 0.5 a 20 años." }).commit();
 for (const [k, p] of Object.entries(PARAM_INFO)) wsP.addRow({ k: p.label, v: P.params[k], d: p.desc }).commit();
 wsP.addRow({ k: "Filtros default", v: "", d: "Cap. ≥ $100M, liquidez ≥ $100K/día, con ingresos, solo comunes, sin fondos, confianza de datos ≥ 50%." }).commit();
-wsP.addRow({ k: "Datos al", v: meta.fetchedAt.slice(0, 10), d: "Escáner público de TradingView (fundamentales en USD) + Yahoo Finance (descripciones)." }).commit();
+wsP.addRow({ k: "Datos al", v: meta.fetchedAt.slice(0, 10), d: "Escáner público de TradingView (fundamentales en USD) + Yahoo Finance (descripciones, insiders, short interest, revisiones de EPS) + SEC EDGAR (dilución EE.UU.)." }).commit();
 wsP.commit();
 
 // ---------- 4) Portafolio default
