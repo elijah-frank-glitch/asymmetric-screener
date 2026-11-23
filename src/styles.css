@@ -185,3 +185,18 @@ table.simple tr.tot td { font-weight: 700; border-top: 1px solid var(--line2); }
   .page { padding: 14px 16px 60px; }
   .factor { grid-template-columns: 120px 1fr 40px; }
 }
+
+/* Track record */
+.tcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 6px; }
+.tcard { text-align: left; cursor: pointer; color: var(--text); border-top: 3px solid var(--line2); font: inherit; }
+.tcard.def { background: rgba(52, 211, 153, 0.06); }
+.tcard.on { box-shadow: inset 0 0 0 1px var(--accent); }
+.tcard em { display: block; margin-top: 2px; }
+.tstats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.tstats b { display: inline; font-size: 12px; margin: 0; font-weight: 500; }
+.tsub { margin: 4px 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+@media (max-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  nav.tabs { max-width: 100%; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  nav.tabs button { white-space: nowrap; flex: none; padding: 6px 10px; }
+}
