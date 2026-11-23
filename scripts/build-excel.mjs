@@ -19,7 +19,7 @@ const R = runModel(D, { weights: P.weights, params: P.params, horizon: H });
 
 const ranked = [];
 for (let i = 0; i < D.n; i++) if (passesFilters(D, i, DEFAULT_FILTERS) && !Number.isNaN(R.cagr[i])) ranked.push(i);
-ranked.sort((a, b) => R.cagr[b] - R.cagr[a]);
+ranked.sort((a, b) => R.elog[b] - R.elog[a]);
 const rankOf = new Int32Array(D.n).fill(-1);
 ranked.forEach((i, k) => (rankOf[i] = k + 1));
 // orden de filas: primero ranking del modelo, luego el resto por capitalización
@@ -120,7 +120,7 @@ wsP.addRow({ k: "Datos al", v: meta.fetchedAt.slice(0, 10), d: "Escáner públic
 wsP.commit();
 
 // ---------- 4) Portafolio default
-const picks = ranked.slice(0, 5).map((i) => ({ i, ...evaluate(companyInputs(D, i, R.quality[i]), H, P.params, R.score[i], true), score: R.score[i] }));
+const picks = ranked.slice(0, 5).map((i) => ({ i, ind: D.industry[i], sec: D.sector[i], ...evaluate(companyInputs(D, i, R.quality[i]), H, P.params, R.score[i], true), score: R.score[i] }));
 const w = buildWeights(picks, "kelly", 0.4);
 const dist = portfolioDistribution(picks, w);
 const wp = wb.addWorksheet("Portafolio 5");

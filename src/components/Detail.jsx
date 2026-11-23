@@ -4,6 +4,29 @@ import { detail, confidence, getRank } from "../engine.js";
 import { fmtUsd, fmtPct, fmtX, fmtByUnit, cagrClass } from "../format.js";
 import PathChart from "./PathChart.jsx";
 import { avColor } from "./Screener.jsx";
+import { useCalibration, theoryOf } from "../calibration.js";
+
+// Retorno esperado del modelo vs. lo que históricamente realizaron (mediana) las acciones de EE.UU. con un esperado similar
+export function CalibratedNote({ cagr, settings, label = "esta empresa" }) {
+  const C = useCalibration(theoryOf(settings));
+  if (!C || !Number.isFinite(cagr)) return null;
+  const real = C.cal.map(cagr);
+  const flat = cagr >= C.cal.plateauFrom;
+  return (
+    <div className="box" style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ minWidth: 150 }}>
+        <div className="small">Retorno calibrado con el backtest de EE.UU.</div>
+        <b className={cagrClass(real)} style={{ fontSize: 20, fontFamily: "var(--mono)" }}>{fmtPct(real * 100)}</b>
+        <span className="small"> anual · modelo: {fmtPct(cagr * 100)}</span>
+      </div>
+      <div className="small" style={{ flex: 1, minWidth: 220 }}>
+        Es el retorno anual mediano a {C.H} años que realizaron en el backtest las acciones a las que el modelo les daba un retorno esperado parecido al de {label}
+        {flat ? <> (por encima de ~{fmtPct(C.cal.plateauFrom * 100)} esperado, el realizado histórico ya no subía)</> : null}.
+        {" "}Ojo: se calibró solo con empresas de NYSE/Nasdaq que siguen cotizando hoy (sesgo de supervivencia){settings.horizon !== C.H ? <>, a {C.H} años aunque tu horizonte es {settings.horizon}</> : null}; en otros mercados puede no aplicar. No cambia el ranking.
+      </div>
+    </div>
+  );
+}
 
 export default function Detail({ D, meta, R, i, settings, rank, total, onClose, inPortfolio, update }) {
   const [co, setCo] = useState(null);
@@ -53,6 +76,8 @@ export default function Detail({ D, meta, R, i, settings, rank, total, onClose, 
               <div className="card"><small>Score ADN Multibagger</small><b>{Math.round(R.score[i] * 100)}</b><em>{rank >= 0 ? `#${rank + 1} de ${total.toLocaleString("es")}` : "fuera del filtro"}</em></div>
               <div className="card"><small>Kelly individual f*</small><b>{Math.round(ev.kelly * 100)}%</b><em>confianza datos {Math.round(conf.conf * 100)}%</em></div>
             </div>
+
+            <CalibratedNote cagr={ev.cagr} settings={settings} />
 
             <div className="box">
               <h4>Escenarios a {H} años</h4>

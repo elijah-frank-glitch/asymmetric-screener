@@ -9,7 +9,7 @@ export function loadData() {
   const D = {
     n: meta.n, cols: derived.cols, dirs, ticker: core.ticker, name: core.name, sym: core.sym,
     common: core.common, exchange: core.exchange, country: core.country, sector: core.sector, industry: core.industry,
-    countries: meta.countries, sectors: meta.sectors, industries: meta.industries, indNM: meta.indNM,
+    countries: meta.countries, sectors: meta.sectors, industries: meta.industries, exchanges: meta.exchanges, indNM: meta.indNM,
   };
   return { D, meta, core };
 }

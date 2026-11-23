@@ -38,7 +38,7 @@ for (const [id, P] of Object.entries(PRESETS)) {
     passing++;
     if (!Number.isNaN(R.cagr[i])) ranked.push(i);
   }
-  ranked.sort((a, b) => R.cagr[b] - R.cagr[a]);
+  ranked.sort((a, b) => R.elog[b] - R.elog[a]);
   if (id === "adn") {
     const c = ranked.map((i) => R.cagr[i]).sort((a, b) => a - b);
     const med = c.length ? (c.length % 2 ? c[(c.length - 1) / 2] : (c[c.length / 2 - 1] + c[c.length / 2]) / 2) : null;
@@ -53,7 +53,7 @@ for (const [id, P] of Object.entries(PRESETS)) {
     score: rnd(R.score[i]), conf: rnd(R.conf[i]), kelly: rnd(R.kelly[i]),
   }));
   // Portafolio: top 5 evaluadas con trayectorias, pesos Kelly de portafolio con tope 40%
-  const picks = topIdx.slice(0, NPORT).map((i) => ({ i, ...evaluate(companyInputs(D, i, R.quality[i]), H, P.params, R.score[i], true), score: R.score[i] }));
+  const picks = topIdx.slice(0, NPORT).map((i) => ({ i, ind: D.industry[i], sec: D.sector[i], ...evaluate(companyInputs(D, i, R.quality[i]), H, P.params, R.score[i], true), score: R.score[i] }));
   const w = buildWeights(picks, "kelly", 0.4);
   const portfolio = picks.map((p, j) => ({ sym: D.sym[p.i], weight: rnd(w[j]) }));
   // Ajuste de redondeo para que los pesos sumen exactamente 1

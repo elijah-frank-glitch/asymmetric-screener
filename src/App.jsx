@@ -11,7 +11,7 @@ import Method from "./components/Method.jsx";
 import Track from "./components/Track.jsx";
 import Backtest from "./components/Backtest.jsx";
 
-const STORE = "asymmetric-settings-v2";
+const STORE = "asymmetric-settings-v3";
 const defaultSettings = () => ({
   preset: "adn",
   weights: { ...PRESETS.adn.weights },
@@ -20,7 +20,7 @@ const defaultSettings = () => ({
   nPicks: 5,
   weighting: "kelly",
   maxW: 0.4,
-  rankBy: "cagr",
+  rankBy: "elog",
   capital: 10000,
   maxPerIndustry: 0,
   excluded: [],
@@ -86,6 +86,7 @@ export default function App() {
   const rankVal = useCallback((i) => {
     if (!R) return NaN;
     if (rankKey === "score") return R.score[i];
+    if (rankKey === "elog") return R.elog[i];
     if (rankKey === "kelly") return Number.isNaN(R.cagr[i]) ? NaN : R.kellyRaw[i] * (1 + R.cagr[i]);
     return R.cagr[i];
   }, [R, rankKey]);
@@ -121,7 +122,7 @@ export default function App() {
         perInd[k] = (perInd[k] || 0) + 1;
       }
       const ev = evaluate(companyInputs(D, i, R.quality[i]), settings.horizon, settings.params, R.score[i], true);
-      if (ev) picks.push({ i, ...ev, score: R.score[i] });
+      if (ev) picks.push({ i, ind: D.industry[i], sec: D.sector[i], ...ev, score: R.score[i] });
     }
     const w = buildWeights(picks, settings.weighting, settings.maxW);
     const dist = portfolioDistribution(picks, w);

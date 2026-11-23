@@ -153,7 +153,7 @@ for (const date of panel.dates) {
     const passing = [];
     for (let j = 0; j < D.n; j++) if (passesFilters(D, j, DEFAULT_FILTERS)) passing.push(j);
     passingN = passing.length;
-    const ranked = passing.filter((j) => !Number.isNaN(R.cagr[j])).sort((a, b) => R.cagr[b] - R.cagr[a]);
+    const ranked = passing.filter((j) => !Number.isNaN(R.cagr[j])).sort((a, b) => R.elog[b] - R.elog[a]);
     const kellyCache = new Map(); // mismas 5 empresas en varios horizontes → mismo cálculo de pesos
     for (const h of HORIZONS) {
       // Elegibles = rankeadas con retorno observado en este horizonte (las que no tienen precio final se omiten)

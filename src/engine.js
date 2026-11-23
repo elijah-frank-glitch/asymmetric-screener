@@ -21,9 +21,20 @@ export const CYCLICAL = new Set([
 
 export const DEFAULT_FILTERS = {
   mcapMin: 100e6, mcapMax: null, liqMin: 100e3, requireRevenue: true, commonOnly: true, confMin: 0.5,
+  accessibleOnly: false,
   sectors: [], countries: [], excludeIndustries: ["Investment Trusts/Mutual Funds"], search: "",
   ranges: [], // [{id, min, max}]
 };
+
+// Bolsas que un inversionista minorista en Latinoamérica suele poder comprar vía un bróker internacional
+// (códigos de bolsa de TradingView). CBOE = listados de Cboe en EE.UU.
+export const ACCESSIBLE_EXCHANGES = new Set([
+  "NYSE", "NASDAQ", "AMEX", "CBOE", // EE.UU.
+  "TSX", "TSXV", // Canadá
+  "LSE", "XETR", "FWB", "EURONEXT", "SIX", "MIL", "BME", // Europa
+  "OMXSTO", "OMXCOP", "OMXHEX", "OSL", // nórdicos
+  "ASX", "TSE", "HKEX", "SGX", "NZX", // Asia-Pacífico
+]);
 
 // D: { n, cols: {id: array}, industry: Int array, industries: [name], indNM: [median %], dirs: {id: ±1} }
 const rankCache = new Map();
@@ -102,6 +113,7 @@ export function passesFilters(D, i, F) {
   if (F.liqMin && !(D.cols.liq_usd[i] >= F.liqMin)) return false;
   if (F.requireRevenue && !(D.cols.revenue[i] > 1e6)) return false;
   if (F.commonOnly && !D.common[i]) return false;
+  if (F.accessibleOnly && D.exchanges && !ACCESSIBLE_EXCHANGES.has(D.exchanges[D.exchange[i]])) return false;
   if (F.sectors?.length && !F.sectors.includes(D.sectors[D.sector[i]])) return false;
   if (F.countries?.length && !F.countries.includes(D.countries[D.country[i]])) return false;
   if (F.excludeIndustries?.length && F.excludeIndustries.includes(D.industries[D.industry[i]])) return false;
@@ -127,6 +139,7 @@ export function runModel(D, { weights, params, horizon }) {
   const E = new Float32Array(D.n).fill(NaN);
   const kelly = new Float32Array(D.n).fill(NaN);
   const kellyRaw = new Float32Array(D.n).fill(NaN);
+  const elog = new Float32Array(D.n).fill(NaN);
   const bull = new Float32Array(D.n).fill(NaN);
   const base = new Float32Array(D.n).fill(NaN);
   const bear = new Float32Array(D.n).fill(NaN);
@@ -135,9 +148,9 @@ export function runModel(D, { weights, params, horizon }) {
     if (!r) continue;
     // Filtro de cordura: múltiplos absurdos casi siempre son errores de datos
     if (!(r.E < 500)) continue;
-    cagr[i] = r.cagr; E[i] = r.E; kelly[i] = r.kelly; kellyRaw[i] = r.kellyRaw; bull[i] = r.bull; base[i] = r.base; bear[i] = r.bear;
+    elog[i] = r.elog; cagr[i] = r.cagr; E[i] = r.E; kelly[i] = r.kelly; kellyRaw[i] = r.kellyRaw; bull[i] = r.bull; base[i] = r.base; bear[i] = r.bear;
   }
-  return { score, quality, cagr, E, kelly, kellyRaw, bull, base, bear, conf: confidenceAll(D) };
+  return { score, quality, elog, cagr, E, kelly, kellyRaw, bull, base, bear, conf: confidenceAll(D) };
 }
 
 export function detail(D, i, settings, score, quality) {

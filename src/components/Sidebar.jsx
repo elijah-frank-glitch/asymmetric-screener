@@ -56,6 +56,7 @@ export default function Sidebar({ D, meta, settings, update }) {
         <div className="field" style={{ marginTop: 8 }}>
           <label>Ordenar ranking por</label>
           <select value={settings.rankBy} onChange={(e) => update({ rankBy: e.target.value })} style={{ width: "100%" }}>
+            <option value="elog">Crecimiento esperado (geométrico) · recomendado</option>
             <option value="cagr">Retorno esperado anual (CAGR)</option>
             <option value="kelly">Kelly × retorno (asimetría)</option>
             <option value="score">Score ADN Multibagger</option>
@@ -94,6 +95,8 @@ export default function Sidebar({ D, meta, settings, update }) {
           <label><span><input type="checkbox" checked={!!F.requireRevenue} onChange={(e) => setF({ requireRevenue: e.target.checked })} /> Solo empresas con ingresos</span></label>
           <label><span><input type="checkbox" checked={!!F.commonOnly} onChange={(e) => setF({ commonOnly: e.target.checked })} /> Solo acciones comunes (sin preferentes)</span></label>
           <label><span><input type="checkbox" checked={F.excludeIndustries?.includes("Investment Trusts/Mutual Funds")} onChange={(e) => setF({ excludeIndustries: e.target.checked ? ["Investment Trusts/Mutual Funds"] : [] })} /> Excluir fondos y vehículos de inversión</span></label>
+          <label><span><input type="checkbox" checked={!!F.accessibleOnly} onChange={(e) => setF({ accessibleOnly: e.target.checked })} /> Solo mercados accesibles desde Latinoamérica</span></label>
+          <div className="hint">Bolsas que un inversionista minorista suele poder comprar con un bróker internacional (p. ej. Interactive Brokers): EE.UU., Canadá, Londres, Alemania, Euronext, Suiza, Italia, España, nórdicos, Australia, Japón, Hong Kong, Singapur y Nueva Zelanda. Verifica con tu bróker.</div>
         </div>
         <div className="field">
           <label>Sectores {F.sectors.length ? <b>{F.sectors.length}</b> : <span className="small">todos</span>}</label>
