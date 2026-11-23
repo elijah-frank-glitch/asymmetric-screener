@@ -83,6 +83,8 @@ export function confidence(D, i) {
   return { conf: Math.max(0, Math.min(1, s)), why };
 }
 let confCache = null;
+// La caché se invalida solo si cambia D.n; el backtest corre varios D del mismo tamaño y la limpia entre fechas.
+export function clearConfidenceCache() { confCache = null; }
 export function confidenceAll(D) {
   if (!confCache || confCache.length !== D.n) {
     confCache = new Float32Array(D.n);

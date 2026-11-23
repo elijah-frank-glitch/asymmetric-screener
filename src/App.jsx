@@ -9,6 +9,7 @@ import Portfolio from "./components/Portfolio.jsx";
 import Metrics from "./components/Metrics.jsx";
 import Method from "./components/Method.jsx";
 import Track from "./components/Track.jsx";
+import Backtest from "./components/Backtest.jsx";
 
 const STORE = "asymmetric-settings-v2";
 const defaultSettings = () => ({
@@ -160,7 +161,7 @@ export default function App() {
           </div>
         </div>
         <nav className="tabs">
-          {[["screener", "Screener"], ["portfolio", `Portafolio (${settings.nPicks})`], ["track", "Track record"], ["metrics", "Métricas y modelo"], ["method", "Metodología"]].map(([k, l]) => (
+          {[["screener", "Screener"], ["portfolio", `Portafolio (${settings.nPicks})`], ["track", "Track record"], ["backtest", "Backtest"],["metrics", "Métricas y modelo"], ["method", "Metodología"]].map(([k, l]) => (
             <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
           ))}
         </nav>
@@ -195,6 +196,7 @@ export default function App() {
         </div>
       )}
       {tab === "track" && <main className="main"><Track /></main>}
+      {tab === "backtest" && <main className="main"><Backtest /></main>}
       {tab === "metrics" && <main className="main"><Metrics D={D} meta={meta} settings={settings} update={update} /></main>}
       {tab === "method" && <main className="main"><Method meta={meta} settings={settings} /></main>}
 

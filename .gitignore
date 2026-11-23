@@ -11,3 +11,5 @@ data/*.tmp
 
 .vercel
 .env*
+data/backtest/raw/
+data/backtest/prices/

@@ -14,7 +14,10 @@
     "vercel-build": "node scripts/vercel-build.mjs",
     "snapshot": "node scripts/snapshot.mjs",
     "snapshot:predictions": "node scripts/snapshot-predictions.mjs",
-    "track": "node scripts/build-track.mjs"
+    "track": "node scripts/build-track.mjs",
+    "backtest": "node scripts/backtest/run-backtest.mjs",
+    "backtest:prices": "node scripts/backtest/fetch-prices.mjs",
+    "backtest:panel": "node --max-old-space-size=6144 scripts/backtest/build-panel.mjs"
   },
   "dependencies": {
     "react": "18.3.1",
