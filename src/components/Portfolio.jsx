@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import { WEIGHTING } from "../model.js";
 import { fmtUsd, fmtPct, fmtX, cagrClass } from "../format.js";
 import PathChart from "./PathChart.jsx";
+import PrintReport from "./PrintReport.jsx";
 import { avColor } from "./Screener.jsx";
 import { useCalibration, theoryOf } from "../calibration.js";
 
@@ -9,6 +10,8 @@ const PAL = ["#34d399", "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "
 
 export default function Portfolio({ D, meta, R, portfolio, settings, update, setSel, rankPos }) {
   const C = useCalibration(theoryOf(settings));
+  const [report, setReport] = useState(null); // null | "print" (abre e imprime) | "preview" (solo vista previa)
+  const closeReport = useCallback(() => setReport(null), []);
   if (!R || !portfolio) return <div className="loading">Calculando…</div>;
   const { picks, w, dist, path, pathBull, pathBase, pathBear } = portfolio;
   const H = settings.horizon;
@@ -22,7 +25,17 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
 
   return (
     <div className="page">
-      <h2>Portafolio de {picks.length} {picks.length === 1 ? "empresa" : "empresas"} · {H} {H === 1 ? "año" : "años"}</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "space-between" }}>
+        <h2>Portafolio de {picks.length} {picks.length === 1 ? "empresa" : "empresas"} · {H} {H === 1 ? "año" : "años"}</h2>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button className="btn primary" onClick={() => setReport("print")} disabled={!picks.length} title="Genera un reporte para imprimir; en el diálogo elige “Guardar como PDF”">⬇ Descargar reporte PDF</button>
+          <button className="btn" onClick={() => setReport("preview")} disabled={!picks.length} title="Ver el reporte en pantalla sin abrir el diálogo de impresión">Vista previa</button>
+        </div>
+      </div>
+      {report && (
+        <PrintReport D={D} meta={meta} portfolio={portfolio} settings={settings} C={C} calC={calC} calPort={calPort}
+          autoPrint={report === "print"} onClose={closeReport} />
+      )}
       <p className="lead">
         Las {settings.nPicks} acciones con mayor {settings.rankBy === "score" ? "score ADN" : settings.rankBy === "kelly" ? "asimetría (Kelly × retorno)" : settings.rankBy === "elog" ? "crecimiento esperado (geométrico)" : "retorno esperado"} según la teoría <b>“{settingsPresetName(settings)}”</b> y tus filtros.
         Se compra hoy y no se toca hasta el año {H}. Los pesos salen de <b>{WEIGHTING[settings.weighting].label}</b>.

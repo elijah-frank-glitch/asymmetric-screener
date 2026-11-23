@@ -1,0 +1,181 @@
+/* ==========================================================================
+   Reporte imprimible del portafolio (PrintReport.jsx)
+   En pantalla: overlay con hojas blancas tipo A4 (vista previa).
+   Al imprimir: solo .pr-root es visible, fondo blanco, saltos de página.
+   ========================================================================== */
+
+.pr-root {
+  --pr-text: #0f172a;
+  --pr-muted: #475569;
+  --pr-dim: #64748b;
+  --pr-line: #e2e8f0;
+  --pr-line2: #cbd5e1;
+  --pr-soft: #f8fafc;
+  --pr-pos: #047857;
+  --pr-neg: #b91c1c;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow-y: auto;
+  background: #525b6b;
+  color: var(--pr-text);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 10pt;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+html.pr-open, html.pr-open body { overflow: hidden; }
+
+/* ---------- barra de herramientas (solo pantalla) ---------- */
+.pr-toolbar {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 18px; background: #0f172a; color: #e6ebf5; border-bottom: 1px solid #1e2a44;
+  font-size: 13px;
+}
+.pr-toolbar .pr-tip { flex: 1; min-width: 220px; color: #8b97b0; font-size: 12px; }
+.pr-toolbar .pr-tip b { color: #e6ebf5; }
+.pr-btn {
+  font: inherit; cursor: pointer; white-space: nowrap;
+  background: #131d33; color: #e6ebf5; border: 1px solid #2a3858; border-radius: 7px; padding: 6px 12px;
+}
+.pr-btn:hover { border-color: #34d399; }
+.pr-btn.pr-primary { background: #34d399; color: #04140d; border-color: #34d399; font-weight: 600; }
+.pr-btn:disabled { opacity: 0.5; cursor: wait; }
+
+.pr-loading {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  min-height: 60vh; color: #e6ebf5; font-size: 15px;
+}
+.pr-spin {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.25); border-top-color: #34d399;
+  animation: pr-spin 0.8s linear infinite;
+}
+@keyframes pr-spin { to { transform: rotate(360deg); } }
+
+/* ---------- hojas ---------- */
+.pr-doc { padding: 24px 12px 60px; }
+.pr-sheet {
+  background: #fff; color: var(--pr-text);
+  width: 210mm; max-width: 100%; min-height: 297mm;
+  margin: 0 auto 24px; padding: 16mm 13mm 17mm;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  box-sizing: border-box;
+}
+.pr-sheet * { box-sizing: border-box; }
+
+.pr-root h1 { font-size: 26pt; line-height: 1.1; margin: 10mm 0 3mm; letter-spacing: -0.5px; color: var(--pr-text); }
+.pr-root h2 { font-size: 15pt; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--pr-text); color: var(--pr-text); }
+.pr-root h3 { font-size: 11pt; margin: 6mm 0 2mm; color: var(--pr-text); break-after: avoid; page-break-after: avoid; }
+.pr-root h4 { font-size: 10pt; margin: 0 0 1.5mm; color: var(--pr-text); }
+.pr-root h5 { font-size: 8.5pt; margin: 0 0 1.5mm; color: var(--pr-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.pr-root a { color: #1d4ed8; }
+.pr-p { margin: 0 0 2mm; color: var(--pr-text); text-align: justify; hyphens: auto; }
+.pr-fine { font-size: 8pt; color: var(--pr-dim); margin: 2mm 0 0; line-height: 1.4; }
+.pr-pos { color: var(--pr-pos) !important; }
+.pr-neg { color: var(--pr-neg) !important; }
+
+/* ---------- portada ---------- */
+.pr-cover { display: flex; flex-direction: column; }
+.pr-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14pt; color: var(--pr-text); }
+.pr-sub { font-size: 12pt; color: var(--pr-muted); margin: 0 0 8mm; }
+.pr-note { border-left: 3px solid #0f766e; background: var(--pr-soft); padding: 3mm 4mm; margin: 0 0 4mm; break-inside: avoid; }
+.pr-note p { margin: 0; color: var(--pr-text); text-align: justify; }
+.pr-cover .pr-fine { margin-top: auto; padding-top: 6mm; }
+
+.pr-kv { border-collapse: collapse; width: 100%; margin: 0 0 6mm; }
+.pr-kv th, .pr-kv td { text-align: left; padding: 1.8mm 2mm; border-bottom: 1px solid var(--pr-line); vertical-align: top; }
+.pr-kv th { width: 38mm; color: var(--pr-muted); font-weight: 600; }
+.pr-kv.pr-small { font-size: 8.5pt; }
+.pr-kv.pr-small th { width: 42mm; }
+
+/* ---------- KPIs ---------- */
+.pr-kpis, .pr-cmp, .pr-cokpis { display: grid; gap: 3mm; margin: 0 0 4mm; }
+.pr-kpis { grid-template-columns: repeat(4, 1fr); }
+.pr-cmp { grid-template-columns: repeat(2, 1fr); }
+.pr-cokpis { grid-template-columns: repeat(4, 1fr); }
+.pr-kpis > div, .pr-cmp > div, .pr-cokpis > div {
+  border: 1px solid var(--pr-line2); border-radius: 2mm; padding: 2.5mm 3mm; break-inside: avoid; background: #fff;
+}
+.pr-root small { display: block; font-size: 7.5pt; color: var(--pr-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.pr-kpis b, .pr-cmp b { display: block; font-size: 15pt; margin: 1mm 0 0.5mm; font-variant-numeric: tabular-nums; }
+.pr-cokpis b { display: block; font-size: 13pt; margin-top: 1mm; font-variant-numeric: tabular-nums; }
+.pr-root em { font-style: normal; font-size: 8pt; color: var(--pr-dim); }
+
+/* ---------- tablas ---------- */
+.pr-t { width: 100%; border-collapse: collapse; margin: 0 0 3mm; font-size: 8.5pt; }
+.pr-t th { text-align: left; font-weight: 600; color: var(--pr-muted); font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.2px;
+  border-bottom: 1.5px solid var(--pr-text); padding: 1.6mm 1.6mm; vertical-align: bottom; }
+.pr-t td { border-bottom: 1px solid var(--pr-line); padding: 1.5mm 1.6mm; vertical-align: top; }
+.pr-t.pr-num td, .pr-t.pr-num th { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pr-t.pr-num td:first-child, .pr-t.pr-num th:first-child { text-align: left; white-space: normal; }
+.pr-t tr { break-inside: avoid; page-break-inside: avoid; }
+.pr-t thead { display: table-header-group; }
+.pr-t .pr-tot td { font-weight: 700; border-top: 1.5px solid var(--pr-text); border-bottom: 0; background: var(--pr-soft); }
+.pr-probs td:not(:first-child), .pr-probs th:not(:first-child) { text-align: center; font-weight: 600; }
+.pr-co { min-width: 40mm; }
+.pr-co i { display: inline-block; width: 2.5mm; height: 2.5mm; border-radius: 0.6mm; margin-right: 1.5mm; vertical-align: middle; }
+.pr-co span { color: var(--pr-muted); font-size: 7.5pt; }
+
+.pr-wbar { display: flex; height: 7mm; border-radius: 1.5mm; overflow: hidden; margin: 0 0 3mm; border: 1px solid var(--pr-line2); }
+.pr-wbar > div { color: #fff; font-size: 7pt; font-weight: 600; display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; }
+
+/* ---------- gráfico ---------- */
+.pr-chart { margin: 0 0 4mm; break-inside: avoid; }
+.pr-chart svg { display: block; border: 1px solid var(--pr-line); }
+.pr-chart text { font-family: Inter, system-ui, sans-serif; }
+.pr-legend { display: flex; gap: 6mm; flex-wrap: wrap; font-size: 8pt; color: var(--pr-muted); margin-top: 1.5mm; }
+.pr-legend i { display: inline-block; width: 7mm; height: 0; margin-right: 1.5mm; vertical-align: middle; }
+
+/* ---------- página de empresa ---------- */
+.pr-cohead { display: flex; align-items: flex-start; gap: 4mm; margin-bottom: 4mm; padding-bottom: 3mm; border-bottom: 2px solid var(--pr-text); }
+.pr-cohead h2 { border: 0; padding: 0; margin: 0 0 1mm; }
+.pr-cohead > div:nth-child(2) { flex: 1; min-width: 0; }
+.pr-meta { font-size: 8.5pt; color: var(--pr-muted); }
+.pr-meta b { color: var(--pr-text); }
+.pr-badge { width: 10mm; height: 10mm; border-radius: 2mm; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; font-size: 12pt; }
+.pr-alloc { text-align: right; flex: none; }
+.pr-alloc b { display: block; font-size: 15pt; }
+.pr-desc { font-size: 9pt; }
+.pr-mgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm 5mm; margin-bottom: 2mm; }
+.pr-mg { break-inside: avoid; }
+.pr-mrow { display: flex; justify-content: space-between; gap: 2mm; font-size: 8.3pt; padding: 0.8mm 0; border-bottom: 1px dotted var(--pr-line2); }
+.pr-mrow span { color: var(--pr-muted); overflow: hidden; text-overflow: ellipsis; }
+.pr-mrow b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pr-alerts { margin: 0; padding-left: 5mm; font-size: 9pt; color: #92400e; }
+.pr-alerts li { margin-bottom: 0.8mm; }
+
+/* ---------- metodología ---------- */
+.pr-method ol, .pr-method ul { margin: 0 0 2mm; padding-left: 5mm; }
+.pr-method li { margin-bottom: 1.5mm; text-align: justify; }
+.pr-disclaimer { border: 1.5px solid var(--pr-text); padding: 3mm 4mm; margin: 5mm 0 3mm; font-size: 9pt; break-inside: avoid; text-align: justify; }
+
+/* ---------- pantallas angostas (vista previa en móvil) ---------- */
+@media screen and (max-width: 820px) {
+  .pr-doc { padding: 12px 6px 40px; }
+  .pr-sheet { width: 100%; min-height: 0; padding: 18px 14px; }
+  .pr-kpis, .pr-cokpis { grid-template-columns: repeat(2, 1fr); }
+  .pr-mgrid { grid-template-columns: repeat(2, 1fr); }
+  .pr-t.pr-num { display: block; overflow-x: auto; }
+}
+
+/* ==========================================================================
+   Impresión
+   ========================================================================== */
+@media print {
+  html.pr-open, html.pr-open body, html.pr-open #root { height: auto !important; overflow: visible !important; background: #fff !important; }
+  html.pr-open body > *:not(.pr-root) { display: none !important; }
+  .pr-root { position: static; inset: auto; overflow: visible; background: #fff; font-size: 9.5pt; }
+  .pr-toolbar, .pr-loading { display: none !important; }
+  .pr-doc { padding: 0; }
+  .pr-sheet {
+    width: auto; max-width: none; min-height: 0; margin: 0; padding: 0;
+    box-shadow: none; break-before: page; page-break-before: always;
+  }
+  .pr-sheet:first-child { break-before: auto; page-break-before: auto; }
+  .pr-cover { min-height: 225mm; }
+  .pr-root a { color: #1d4ed8; text-decoration: none; }
+}

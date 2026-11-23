@@ -5,7 +5,7 @@ const ROW = 34;
 const COLORS = ["#34d399", "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb923c", "#4ade80"];
 export const avColor = (s) => COLORS[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
 
-export default function Screener({ D, meta, R, ranked, settings, update, sel, setSel, sort, setSort, rankVal, pickSet, busy, dataVer }) {
+export default function Screener({ D, meta, R, ranked, settings, update, sel, setSel, sort, setSort, rankVal, pickSet, busy, dataVer, cmpSet, toggleCmp, cmpFull }) {
   const cat = useMemo(() => Object.fromEntries(meta.catalog.map((m) => [m.id, m])), [meta]);
   const [q, setQ] = useState(settings.filters.search || "");
   const [showAdd, setShowAdd] = useState(false);
@@ -18,6 +18,7 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
   const H = settings.horizon;
   const cols = useMemo(() => {
     const base = [
+      ...(toggleCmp ? [{ k: "cmp", l: "⚖", w: "34px", nosort: true }] : []),
       { k: "rank", l: "#", w: "52px", num: true, v: (i, pos) => pos + 1 },
       { k: "name", l: "Empresa", w: "250px", v: (i) => D.name[i] },
       { k: "country", l: "País", w: "120px", v: (i) => meta.countries[D.country[i]] },
@@ -32,7 +33,7 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
     ];
     const extra = settings.columns.filter((id) => cat[id]).map((id) => ({ k: id, l: cat[id].label, w: "120px", num: true, v: (i) => D.cols[id]?.[i], f: (x) => fmtMetric(x, id, cat[id].unit), metric: true }));
     return [...base, ...extra];
-  }, [D, R, meta, settings.columns, cat, H, dataVer]);
+  }, [D, R, meta, settings.columns, cat, H, dataVer, toggleCmp]);
 
   const rows = useMemo(() => {
     if (sort.key === "rank") return sort.dir === -1 ? ranked : [...ranked].reverse();
@@ -64,11 +65,20 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
   const end = Math.min(rows.length, Math.ceil((scroll.top + scroll.h) / ROW) + 15);
   const tpl = cols.map((c) => c.w).join(" ");
 
-  const clickHead = (k) => setSort((s) => (s.key === k ? { key: k, dir: -s.dir } : { key: k, dir: k === "name" || k === "country" || k === "industry" ? 1 : -1 }));
+  const clickHead = (k) => k !== "cmp" && setSort((s) => (s.key === k ? { key: k, dir: -s.dir } : { key: k, dir: k === "name" || k === "country" || k === "industry" ? 1 : -1 }));
 
   const cell = (c, i) => {
     const pos = posOf.get(i) ?? 0;
     switch (c.k) {
+      case "cmp": {
+        const on = cmpSet?.has(D.sym[i]);
+        return (
+          <input type="checkbox" className="cmpbox" checked={!!on} disabled={!on && cmpFull}
+            title={on ? "Quitar de la comparación" : cmpFull ? "Máximo 4 empresas" : "Agregar a la comparación"}
+            aria-label={`Comparar ${D.ticker[i]}`}
+            onClick={(e) => e.stopPropagation()} onChange={() => toggleCmp(D.sym[i])} />
+        );
+      }
       case "rank": return pos + 1;
       case "name": return (
         <div className="co">
@@ -127,14 +137,14 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
         {!R ? <div className="loading">Calculando el modelo sobre {D.n.toLocaleString("es")} acciones…</div> : (
           <div className="tgrid" style={{ gridTemplateColumns: tpl }}>
             {cols.map((c) => (
-              <div key={c.k} className={`th thead ${c.num ? "num" : ""} ${sort.key === c.k ? "sorted" : ""}`} onClick={() => clickHead(c.k)} title={c.l}>
+              <div key={c.k} className={`th thead ${c.num ? "num" : ""} ${c.k === "cmp" ? "cmpcol" : ""} ${sort.key === c.k ? "sorted" : ""}`} onClick={() => clickHead(c.k)} title={c.k === "cmp" ? "Seleccionar hasta 4 empresas para comparar" : c.l}>
                 {c.l}{sort.key === c.k ? (sort.dir === -1 ? " ↓" : " ↑") : ""}
               </div>
             ))}
             {start > 0 && <div style={{ gridColumn: "1 / -1", height: start * ROW }} />}
             {rows.slice(start, end).map((i) => (
               <div key={i} className={`trow ${sel === i ? "sel" : ""} ${pickSet.has(i) ? "pick" : ""}`} onClick={() => setSel(i)}>
-                {cols.map((c) => <div key={c.k} className={`td ${c.num ? "num" : ""}`}>{cell(c, i)}</div>)}
+                {cols.map((c) => <div key={c.k} className={`td ${c.num ? "num" : ""} ${c.k === "cmp" ? "cmpcol" : ""}`} onClick={c.k === "cmp" ? (e) => { e.stopPropagation(); if (e.target === e.currentTarget && (cmpSet?.has(D.sym[i]) || !cmpFull)) toggleCmp(D.sym[i]); } : undefined}>{cell(c, i)}</div>)}
               </div>
             ))}
             {end < rows.length && <div style={{ gridColumn: "1 / -1", height: (rows.length - end) * ROW }} />}

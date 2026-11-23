@@ -1,12 +1,15 @@
 // Transforma data/universe.json (+ data/profiles.json) en los archivos que consume la web-app:
 //   public/data/meta.json      catálogo, sectores, industrias, países, medianas
-//   public/data/core.json      identidad + métricas que usa el modelo (carga inicial)
+//   public/data/core.bin.json  identidad + métricas que usa el modelo (carga inicial; binario, ver src/corebin.js)
+//   public/data/logo.json      logoid por empresa (solo Node: load-node.mjs)
 //   public/data/m/<id>.json    resto de métricas (carga bajo demanda)
 //   public/data/desc/<k>.json  descripciones de negocio por bloques de 1000
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { METRICS, CATEGORIES } from "./metrics.mjs";
 import { SECTOR_ES, INDUSTRY } from "./industries.mjs";
 import { CORE_IDS } from "../src/engine.js";
+import { encodeCore, decodeCore } from "../src/corebin.js";
+import { isDeepStrictEqual } from "node:util";
 
 const root = new URL("../", import.meta.url);
 const uni = JSON.parse(readFileSync(new URL("data/universe.json", root)));
@@ -118,9 +121,15 @@ const core = {
   hasDesc: sym.map((s) => (profiles[s] ? 1 : 0)),
   cols: Object.fromEntries(coreIds.map((id) => [id, cols[id].map(r4)])),
 };
-const coreStr = JSON.stringify(core);
-writeFileSync(new URL("core.json", out), coreStr);
-meta.coreBytes = Buffer.byteLength(coreStr);
+// Binario columnar. Extensión .json a propósito: el CDN de Vercel solo comprime (brotli/gzip) tipos de su
+// lista (application/json sí, application/octet-stream no); el navegador lo lee con arrayBuffer().
+const { logo: logoArr, ...coreWeb } = core;
+const coreBin = encodeCore(coreWeb, exchanges);
+if (!isDeepStrictEqual(decodeCore(coreBin), coreWeb)) throw new Error("core.bin: la decodificación no reproduce el núcleo");
+writeFileSync(new URL("core.bin.json", out), coreBin);
+writeFileSync(new URL("logo.json", out), JSON.stringify(logoArr));
+meta.coreFile = "core.bin.json";
+meta.coreBytes = coreBin.length;
 writeFileSync(new URL("meta.json", out), JSON.stringify(meta));
 for (const id of allIds) if (!coreIds.includes(id)) writeFileSync(new URL(`m/${id}.json`, out), JSON.stringify(cols[id].map(r4)));
 // Bloques de 500 empresas con TODAS sus métricas + descripción (para la ficha de detalle)

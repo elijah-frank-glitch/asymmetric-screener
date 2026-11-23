@@ -212,3 +212,59 @@ table.simple tr.tot td { font-weight: 700; border-top: 1px solid var(--line2); }
 .sigrow b { font-family: var(--mono); font-weight: 500; text-align: right; }
 .sigrow b em { font-style: normal; font-family: var(--sans); font-size: 10.5px; font-weight: 400; margin-left: 6px; }
 @media (max-width: 560px) { .siggrid { grid-template-columns: 1fr; } }
+
+/* === compartir y comparar === */
+.toast { position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--accent); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 12.5px; z-index: 90; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); animation: toastin 0.18s ease-out; }
+@keyframes toastin { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--line2); }
+.btn.on { border-color: var(--accent); color: var(--accent); background: rgba(52, 211, 153, 0.08); }
+.dactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.th.cmpcol, .td.cmpcol { justify-content: center; padding: 0 4px; cursor: pointer; }
+.th.cmpcol { font-size: 13px; text-transform: none; }
+.cmpbox { margin: 0; width: 15px; height: 15px; cursor: pointer; }
+.cmpbox:disabled { cursor: not-allowed; opacity: 0.35; }
+
+.cmpbar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 35; display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; padding: 8px 10px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55); max-width: calc(100vw - 32px); }
+.cmpbar-list { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.cmpchip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11.5px; padding: 2px 4px 2px 8px; border-radius: 999px; border: 1px solid var(--line2); background: var(--bg2); }
+.cmpchip button { border: 0; background: transparent; color: var(--dim); cursor: pointer; padding: 0 3px; font-size: 11px; line-height: 1; }
+.cmpchip button:hover { color: var(--neg); }
+
+.cmpview { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; }
+.cmphead { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+.cmphead h2 { margin: 0; font-size: 16px; }
+.cmpall { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--muted); }
+.cmpbody { flex: 1; overflow-y: auto; padding: 8px 18px 40px; }
+.cmpchart { max-width: 1100px; }
+.cmpscroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 10px; -webkit-overflow-scrolling: touch; }
+.cmptable { border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 100%; }
+.cmptable th, .cmptable td { padding: 6px 12px; border-bottom: 1px solid var(--line); }
+.cmptable td { text-align: right; font-family: var(--mono); white-space: nowrap; min-width: 150px; }
+.cmptable tbody th[scope="row"] { position: sticky; left: 0; z-index: 2; background: var(--bg2); text-align: left; font-weight: 400; color: var(--muted); min-width: 200px; max-width: 240px; border-right: 1px solid var(--line); }
+.cmptable thead th { position: sticky; top: 0; background: var(--panel); z-index: 3; text-align: left; vertical-align: top; }
+.cmptable thead th.corner { left: 0; z-index: 4; border-right: 1px solid var(--line); background: var(--panel); }
+.cmptable .cmpco { min-width: 170px; }
+.cmptable .cmpco .co { gap: 7px; align-items: flex-start; }
+.cmptable .cmpsub { margin-top: 4px; font-weight: 400; white-space: normal; }
+.cmptable tr.grp th { position: sticky; left: 0; text-align: left; background: var(--panel2); color: var(--accent2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; padding-top: 9px; }
+.cmptable td.best { background: rgba(52, 211, 153, 0.1); color: var(--accent); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.cmptable tbody tr:hover td, .cmptable tbody tr:hover th[scope="row"] { background-color: rgba(34, 211, 238, 0.05); }
+.cmptable tbody tr:hover td.best { background: rgba(52, 211, 153, 0.14); }
+.linkish { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; color: var(--text); }
+.linkish:hover b { color: var(--accent2); }
+.cmprm { margin-left: auto; border: 0; background: transparent; color: var(--dim); cursor: pointer; padding: 2px 4px; }
+.cmprm:hover { color: var(--neg); }
+@media (max-width: 900px) {
+  .cmphead { padding: 10px 16px; }
+  .cmphead .cmpnote { display: none; }
+  .cmpbody { padding: 6px 16px 40px; }
+  .cmptable tbody th[scope="row"] { min-width: 128px; max-width: 140px; white-space: normal; font-size: 11.5px; }
+  .cmptable td { min-width: 112px; padding: 6px 8px; }
+  .cmptable .cmpco { min-width: 130px; }
+  .cmptable .cmpco .co .nm span { max-width: 110px; }
+  .cmpbar { bottom: 10px; padding: 6px 8px; }
+  .toast { bottom: 70px; }
+}
+@media print { .cmpbar, .toast, .cmpview { display: none !important; } }
+.tablewrap .tgrid { padding-bottom: 64px; } /* que la barra flotante de comparar no tape las últimas filas */

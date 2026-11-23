@@ -10,6 +10,8 @@ import Metrics from "./components/Metrics.jsx";
 import Method from "./components/Method.jsx";
 import Track from "./components/Track.jsx";
 import Backtest from "./components/Backtest.jsx";
+import Compare from "./components/Compare.jsx";
+import { encodeState, decodeHash, applyShared, shareUrl, shareLink, MAX_COMPARE } from "./share.js";
 
 const STORE = "asymmetric-settings-v3";
 const defaultSettings = () => ({
@@ -27,6 +29,17 @@ const defaultSettings = () => ({
   columns: ["rev_g", "gm", "fcf_yield"],
   filters: { ...DEFAULT_FILTERS },
 });
+const CMP_STORE = "asymmetric-compare-v1";
+function loadCmp() {
+  try {
+    const a = JSON.parse(localStorage.getItem(CMP_STORE));
+    if (Array.isArray(a)) return a.filter((x) => typeof x === "string").slice(0, MAX_COMPARE);
+  } catch {}
+  return [];
+}
+function clearHash() {
+  try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch {}
+}
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(STORE));
@@ -48,11 +61,58 @@ export default function App() {
   const [sel, setSel] = useState(null);
   const [sort, setSort] = useState({ key: "rank", dir: -1 });
   const [sideOpen, setSideOpen] = useState(false);
+  const [cmp, setCmp] = useState(loadCmp); // símbolos (p. ej. "NASDAQ:NVDA") a comparar
+  const [cmpOpen, setCmpOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  // Aplica un link compartido (#v1.…): sobreescribe los ajustes guardados y abre pestaña/empresa/comparación.
+  const applyHash = useCallback((D, meta) => {
+    const o = decodeHash(window.location.hash);
+    if (!o) return;
+    const r = applyShared(o, defaultSettings(), meta, D);
+    if (r.settings) setSettings(r.settings);
+    if (r.tab) setTab(r.tab);
+    if (r.cmp.length) setCmp(r.cmp);
+    setCmpOpen(r.cv);
+    setSel(r.sym ? D.sym.indexOf(r.sym) : null);
+    clearHash();
+  }, []);
 
   useEffect(() => {
-    loadData(setProgress).then(({ D, meta }) => { setD(D); setMeta(meta); }).catch((e) => setErr(String(e)));
-  }, []);
+    loadData(setProgress).then(({ D, meta }) => {
+      try { applyHash(D, meta); } catch {}
+      setD(D); setMeta(meta);
+    }).catch((e) => setErr(String(e)));
+  }, [applyHash]);
+  useEffect(() => {
+    if (!D || !meta) return;
+    const on = () => { try { applyHash(D, meta); } catch {} };
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, [D, meta, applyHash]);
   useEffect(() => { try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch {} }, [settings]);
+  useEffect(() => { try { localStorage.setItem(CMP_STORE, JSON.stringify(cmp)); } catch {} }, [cmp]);
+
+  const showToast = useCallback((t) => {
+    setToast(t);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }, []);
+  const doShare = useCallback(async (extra = {}, title = "Asymmetric · screener de multibaggers") => {
+    const url = shareUrl(encodeState(settings, defaultSettings(), { tab, cmp, ...extra }));
+    const r = await shareLink(url, title);
+    if (r === "copied") showToast("Link copiado");
+    else if (r === "failed") window.prompt("Copia este link:", url);
+  }, [settings, tab, cmp, showToast]);
+  const toggleCmp = useCallback((sym) => {
+    setCmp((c) => {
+      if (c.includes(sym)) return c.filter((x) => x !== sym);
+      if (c.length >= MAX_COMPARE) return c;
+      return [...c, sym];
+    });
+  }, []);
+  const cmpSet = useMemo(() => new Set(cmp), [cmp]);
 
   const update = useCallback((patch) => setSettings((s) => ({ ...s, ...(typeof patch === "function" ? patch(s) : patch) })), []);
 
@@ -172,6 +232,7 @@ export default function App() {
           <div><b>{D.n.toLocaleString("es")}</b> acciones · <b>{meta.countries.length}</b> países · <b>{meta.exchanges.length}</b> bolsas</div>
           <div>Datos al {fetched.toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })} · {busy ? <span className="calc">calculando…</span> : <>modelo en {Math.round(R?.ms || 0)} ms</>}</div>
         </div>
+        <button className="btn small" onClick={() => doShare()} title="Copiar un link con tus ajustes actuales">🔗 Compartir</button>
         <a className="btn small" href="/Universo_Global_Multibagger.xlsx" download>⬇ Excel</a>
       </header>
 
@@ -182,7 +243,8 @@ export default function App() {
           </aside>
           <main className="main">
             <Screener D={D} meta={meta} R={R} ranked={ranked} settings={settings} update={update} sel={sel} setSel={setSel}
-              sort={sort} setSort={setSort} rankVal={rankVal} pickSet={pickSet} busy={busy} dataVer={dataVer} />
+              sort={sort} setSort={setSort} rankVal={rankVal} pickSet={pickSet} busy={busy} dataVer={dataVer}
+              cmpSet={cmpSet} toggleCmp={toggleCmp} cmpFull={cmp.length >= MAX_COMPARE} />
           </main>
         </div>
       )}
@@ -205,9 +267,30 @@ export default function App() {
         <>
           <div className="overlay" onClick={() => setSel(null)} />
           <Detail D={D} meta={meta} R={R} i={sel} settings={settings} rank={rankPos[sel]} total={ranked.length} onClose={() => setSel(null)}
-            inPortfolio={pickSet.has(sel)} update={update} />
+            inPortfolio={pickSet.has(sel)} update={update}
+            inCompare={cmpSet.has(D.sym[sel])} cmpFull={cmp.length >= MAX_COMPARE} onCompare={() => toggleCmp(D.sym[sel])}
+            onShare={() => doShare({ sym: D.sym[sel] }, `${D.name[sel]} · Asymmetric`)} />
         </>
       )}
+
+      {cmp.length > 0 && !cmpOpen && (
+        <div className="cmpbar" role="region" aria-label="Comparación">
+          <div className="cmpbar-list">
+            {cmp.map((s) => (
+              <span key={s} className="cmpchip">{s.split(":").pop()}<button aria-label={`Quitar ${s}`} onClick={() => toggleCmp(s)}>✕</button></span>
+            ))}
+          </div>
+          <button className="btn small ghost" onClick={() => setCmp([])}>Limpiar</button>
+          <button className="btn small primary" onClick={() => { setSel(null); setCmpOpen(true); }} disabled={!R}>⚖ Comparar ({cmp.length})</button>
+        </div>
+      )}
+      {cmpOpen && R && cmp.length > 0 && (
+        <Compare D={D} meta={meta} R={R} settings={settings} syms={cmp} rankPos={rankPos} total={ranked.length}
+          onClose={() => setCmpOpen(false)} onRemove={toggleCmp}
+          onOpen={(i) => { setCmpOpen(false); setSel(i); }}
+          onShare={() => doShare({ cv: true }, "Comparación · Asymmetric")} />
+      )}
+      {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }

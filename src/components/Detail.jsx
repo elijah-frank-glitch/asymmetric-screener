@@ -110,7 +110,7 @@ function SignalsBox({ co, isUS }) {
   );
 }
 
-export default function Detail({ D, meta, R, i, settings, rank, total, onClose, inPortfolio, update }) {
+export default function Detail({ D, meta, R, i, settings, rank, total, onClose, inPortfolio, update, inCompare, cmpFull, onCompare, onShare }) {
   const [co, setCo] = useState(null);
   useEffect(() => { setCo(null); loadCompany(i).then(setCo); }, [i]);
   useEffect(() => {
@@ -149,6 +149,17 @@ export default function Detail({ D, meta, R, i, settings, rank, total, onClose, 
             {chips.length > 0 && (
               <div className="sigchips" aria-label="Señales">
                 {chips.map((c) => <span key={c.t} className={`sigchip ${c.c}`} title={c.tip}>{c.t}</span>)}
+              </div>
+            )}
+            {(onShare || onCompare) && (
+              <div className="dactions">
+                {onShare && <button className="btn small" onClick={onShare} title="Copiar un link que abre esta ficha">🔗 Compartir esta empresa</button>}
+                {onCompare && (
+                  <button className={`btn small ${inCompare ? "on" : ""}`} onClick={onCompare} disabled={!inCompare && cmpFull}
+                    title={!inCompare && cmpFull ? "Ya hay 4 empresas en la comparación" : ""}>
+                    {inCompare ? "✓ En comparación" : "⚖ Comparar"}
+                  </button>
+                )}
               </div>
             )}
           </div>
