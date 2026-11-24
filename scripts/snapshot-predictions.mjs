@@ -7,6 +7,8 @@ import { execSync } from "node:child_process";
 import { loadData } from "./load-node.mjs";
 import { runModel, passesFilters, DEFAULT_FILTERS, companyInputs } from "../src/engine.js";
 import { PRESETS, evaluate, buildWeights } from "../src/model.js";
+import { calDist, rankPercentiles } from "../src/calcore.js";
+import { readFileSync } from "node:fs";
 import { BENCHMARKS, fetchCloses, fetchFx, rnd, sig, predictionsDir } from "./tv-prices.mjs";
 
 const root = new URL("../", import.meta.url);
@@ -24,6 +26,9 @@ let commit = "local";
 try { commit = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "local"; } catch {}
 
 const { D, meta, core } = loadData();
+// Calibración (si existe): se guarda junto a cada predicción para poder evaluarla después contra lo realizado
+const calUrl = new URL("public/calibration.json", root);
+const CT = existsSync(calUrl) ? JSON.parse(readFileSync(calUrl)) : null;
 
 // Universo: cuántas pasan los filtros default y su CAGR mediana (con la teoría default)
 const theories = {};
@@ -45,12 +50,14 @@ for (const [id, P] of Object.entries(PRESETS)) {
     universe = { n: D.n, passing, medianCagr: rnd(med) };
   }
   const topIdx = ranked.slice(0, TOP);
+  const pct = CT ? rankPercentiles(D, R, passesFilters, DEFAULT_FILTERS) : null;
+  const calOf = (i) => { if (!CT || Number.isNaN(pct[i])) return {}; const c = calDist(CT, id, H, pct[i]); return c ? { calPct: rnd(pct[i]), calMedCagr: rnd(c.cagrMed), calP2x: rnd(c.p2x), calPLoss: rnd(c.pLoss) } : {}; };
   const top = topIdx.map((i, k) => ({
     rank: k + 1, sym: D.sym[i], ticker: D.ticker[i], name: D.name[i], country: meta.countries[D.country[i]],
     industry: meta.industries[D.industry[i]], currency: core.cur[i] || null, price: D.cols.price?.[i] ?? null,
     mcap: D.cols.mcap[i] != null ? Math.round(D.cols.mcap[i]) : null,
     cagr: rnd(R.cagr[i]), E: rnd(R.E[i]), bull: rnd(R.bull[i]), base: rnd(R.base[i]), bear: rnd(R.bear[i]),
-    score: rnd(R.score[i]), conf: rnd(R.conf[i]), kelly: rnd(R.kelly[i]),
+    score: rnd(R.score[i]), conf: rnd(R.conf[i]), kelly: rnd(R.kelly[i]), ...calOf(i),
   }));
   // Portafolio: top 5 evaluadas con trayectorias, pesos Kelly de portafolio con tope 40%
   const picks = topIdx.slice(0, NPORT).map((i) => ({ i, ind: D.industry[i], sec: D.sector[i], ...evaluate(companyInputs(D, i, R.quality[i]), H, P.params, R.score[i], true), score: R.score[i] }));

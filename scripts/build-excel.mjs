@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { loadData } from "./load-node.mjs";
 import { runModel, passesFilters, DEFAULT_FILTERS, companyInputs, confidence } from "../src/engine.js";
 import { PRESETS, PARAM_INFO, evaluate, buildWeights, portfolioDistribution } from "../src/model.js";
+import { calDist, calKelly, calOutcomes, rankPercentiles, RF_ANNUAL } from "../src/calcore.js";
 
 const root = new URL("../", import.meta.url);
 const { D, meta, core } = loadData();
@@ -17,6 +18,15 @@ const profiles = existsSync(new URL("data/profiles.json", root)) ? JSON.parse(re
 const H = 5, P = PRESETS.adn;
 const R = runModel(D, { weights: P.weights, params: P.params, horizon: H });
 
+// Calibración histórica (public/calibration.json): percentil del ranking → distribución realizada en el backtest de EE.UU.
+const calFile = new URL("public/calibration.json", root);
+const CT = existsSync(calFile) ? JSON.parse(readFileSync(calFile)) : null;
+const pct = CT ? rankPercentiles(D, R, passesFilters, DEFAULT_FILTERS) : null;
+const G = 401;
+const grid = CT ? Array.from({ length: G }, (_, k) => calDist(CT, "adn", H, k / (G - 1))) : null;
+const gridK = grid ? grid.map((d) => calKelly(d, H)) : null;
+const calOf = (i) => (grid && !Number.isNaN(pct[i]) ? grid[Math.round(pct[i] * (G - 1))] : null);
+const kOf = (i) => (gridK && !Number.isNaN(pct[i]) ? gridK[Math.round(pct[i] * (G - 1))] : NaN);
 const ranked = [];
 for (let i = 0; i < D.n; i++) if (passesFilters(D, i, DEFAULT_FILTERS) && !Number.isNaN(R.cagr[i])) ranked.push(i);
 ranked.sort((a, b) => R.elog[b] - R.elog[a]);
@@ -50,13 +60,19 @@ ws.columns = [
   { header: "Cómo gana dinero", key: "money", width: 60 },
   ...keyMetrics.map((id) => ({ header: cat[id].label + (cat[id].unit === "usd" ? " (USD)" : cat[id].unit === "pct" ? " (%)" : ""), key: id, width: 14 })),
   { header: "Score ADN (0-100)", key: "score", width: 11 },
-  { header: "Confianza datos (%)", key: "conf", width: 11 },
-  { header: "Retorno anual esperado 5a (%)", key: "cagr", width: 13 },
+  { header: "Integridad de datos (0-100)", key: "conf", width: 11 },
+  { header: "Percentil del ranking", key: "pct", width: 10 },
+  { header: "Ret. anual CALIBRADO 5a, mediana histórica (%)", key: "calm", width: 14 },
+  { header: "P(pérdida) 5a (%)", key: "ploss", width: 10 },
+  { header: "P(≥2x) 5a (%)", key: "p2x", width: 10 },
+  { header: "P(≥5x) 5a (%)", key: "p5x", width: 10 },
+  { header: "Kelly calibrado (%)", key: "kcal", width: 10 },
+  { header: "Retorno anual del MODELO 5a, sin calibrar (%)", key: "cagr", width: 13 },
   { header: "Múltiplo esperado 5a (x)", key: "E", width: 12 },
   { header: "Alcista (x)", key: "bull", width: 10 },
   { header: "Base (x)", key: "base", width: 10 },
   { header: "Bajista (x)", key: "bear", width: 10 },
-  { header: "Kelly f* (%)", key: "kelly", width: 10 },
+  { header: "Kelly con escenarios del modelo (%)", key: "kelly", width: 10 },
 ];
 ws.getRow(1).eachCell((c) => Object.assign(c, HEAD));
 ws.getRow(1).height = 42;
@@ -74,6 +90,7 @@ for (const i of order) {
     desc: desc || `${meta.industryEs[ind]} (${meta.sectorEs[D.sector[i]]}). Sin descripción pública disponible.`,
     money: meta.industryModel[ind] || "",
     score: r2(R.score[i] * 100, 0), conf: r2(R.conf[i] * 100, 0),
+    ...(() => { const c = calOf(i); return c ? { pct: r2(pct[i] * 100, 1), calm: r2(c.cagrMed * 100, 1), ploss: r2(c.pLoss * 100, 0), p2x: r2(c.p2x * 100, 0), p5x: r2(c.p5x * 100, 1), kcal: r2(kOf(i) * 100, 0) } : {}; })(),
     cagr: r2(R.cagr[i] * 100, 1), E: r2(R.E[i]), bull: r2(R.bull[i]), base: r2(R.base[i]), bear: r2(R.bear[i]), kelly: r2(R.kelly[i] * 100, 0),
   };
   for (const id of keyMetrics) row[id] = r2(D.cols[id]?.[i], cat[id].unit === "usd" ? 0 : 2);
@@ -120,16 +137,19 @@ wsP.addRow({ k: "Datos al", v: meta.fetchedAt.slice(0, 10), d: "Escáner públic
 wsP.commit();
 
 // ---------- 4) Portafolio default
-const picks = ranked.slice(0, 5).map((i) => ({ i, ind: D.industry[i], sec: D.sector[i], ...evaluate(companyInputs(D, i, R.quality[i]), H, P.params, R.score[i], true), score: R.score[i] }));
-const w = buildWeights(picks, "kelly", 0.4);
-const dist = portfolioDistribution(picks, w);
+const rf = Math.pow(1 + RF_ANNUAL, H);
+const picks = ranked.slice(0, 5).map((i) => { const ev = evaluate(companyInputs(D, i, R.quality[i]), H, P.params, R.score[i], true); const c = calOf(i); return { i, ind: D.industry[i], sec: D.sector[i], ...ev, cal: c, outcomes: c ? calOutcomes(c) : ev.outcomes, score: R.score[i] }; });
+const w = buildWeights(picks, "kelly", 0.4, { cash: rf });
+const dist = portfolioDistribution(picks, w, 6000, undefined, rf);
 const wp = wb.addWorksheet("Portafolio 5");
-wp.columns = [{ header: "Empresa", key: "n", width: 34 }, { header: "Símbolo", key: "s", width: 18 }, { header: "País", key: "c", width: 16 }, { header: "Peso Kelly (%)", key: "w", width: 12 }, { header: "Retorno anual esp. (%)", key: "cagr", width: 14 }, { header: "Múltiplo esp. 5a", key: "E", width: 12 }, { header: "Alcista", key: "b", width: 9 }, { header: "Base", key: "m", width: 9 }, { header: "Bajista", key: "r", width: 9 }, { header: "P(ruina) %", key: "pr", width: 10 }];
+wp.columns = [{ header: "Empresa", key: "n", width: 34 }, { header: "Símbolo", key: "s", width: 18 }, { header: "País", key: "c", width: 16 }, { header: "Peso Kelly calibrado (%)", key: "w", width: 12 }, { header: "Ret. calibrado mediano (%)", key: "cm", width: 12 }, { header: "P(pérdida) %", key: "pl", width: 10 }, { header: "P(≥2x) %", key: "p2", width: 10 }, { header: "Ret. del modelo (%)", key: "cagr", width: 14 }, { header: "Múltiplo esp. 5a", key: "E", width: 12 }, { header: "Alcista", key: "b", width: 9 }, { header: "Base", key: "m", width: 9 }, { header: "Bajista", key: "r", width: 9 }, { header: "P(ruina) %", key: "pr", width: 10 }];
 wp.getRow(1).eachCell((c) => Object.assign(c, HEAD));
 wp.getRow(1).commit();
-picks.forEach((p, j) => wp.addRow({ n: D.name[p.i], s: D.sym[p.i], c: meta.countries[D.country[p.i]], w: r2(w[j] * 100, 1), cagr: r2(p.cagr * 100, 1), E: r2(p.E), b: r2(p.bull), m: r2(p.base), r: r2(p.bear), pr: r2(p.probs.ruin * 100, 0) }).commit());
+picks.forEach((p, j) => wp.addRow({ n: D.name[p.i], s: D.sym[p.i], c: meta.countries[D.country[p.i]], w: r2(w[j] * 100, 1), cm: p.cal ? r2(p.cal.cagrMed * 100, 1) : null, pl: p.cal ? r2(p.cal.pLoss * 100, 0) : null, p2: p.cal ? r2(p.cal.p2x * 100, 0) : null, cagr: r2(p.cagr * 100, 1), E: r2(p.E), b: r2(p.bull), m: r2(p.base), r: r2(p.bear), pr: r2(p.probs.ruin * 100, 0) }).commit());
 wp.addRow({}).commit();
-wp.addRow({ n: "Múltiplo esperado del portafolio", w: r2(dist.mean) }).commit();
+if (dist.cash > 0.005) wp.addRow({ n: "Efectivo (3% anual)", w: r2(dist.cash * 100, 1) }).commit();
+wp.addRow({ n: "Múltiplo esperado del portafolio (calibrado)", w: r2(dist.mean) }).commit();
+wp.addRow({ n: "P(perder dinero) / P(≥2x)", w: `${r2(dist.pLoss * 100, 0)}% / ${r2(dist.p2x * 100, 0)}%` }).commit();
 wp.addRow({ n: "Mediana / P10 / P90", w: `${r2(dist.median)} / ${r2(dist.p10)} / ${r2(dist.p90)}` }).commit();
 wp.addRow({ n: "Aviso: modelo cuantitativo educativo, no es recomendación de inversión." }).commit();
 wp.commit();

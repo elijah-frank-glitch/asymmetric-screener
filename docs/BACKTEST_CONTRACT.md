@@ -77,3 +77,19 @@ generado por `scripts/backtest/run-backtest.mjs` desde el panel).
 ```
 "top5" = portafolio de 5 ponderado con Kelly (`buildWeights(picks, "kelly", 0.4)`), igual que la app. top20/top50/decile1 = igual ponderado.
 Retornos acumulados en decimal (1.85 = +185%). CAGR anualizados en decimal.
+
+## 3. Versión 2 (auditoría, nov-2026): sin mirar el futuro, supervivencia y calibración
+
+- **Panel**: horizontes 1, 3, 5 y **10** años. Si el historial de precios termina antes del horizonte ya no se pone `null`:
+  se guarda el retorno hasta el último precio y el índice va en `delisted[fecha][h]`. `coverage[fecha]` agrega
+  `secFilers` (emisores con ventas > $1M en la SEC) y `secInPanel` (cuántos de ellos tenemos con precio).
+- **Selección sin mirar el futuro**: el top N se toma del ranking completo; si una elegida dejó de cotizar se usa su último
+  precio con −15%, y si no hay precio posterior, el resultado esperado de una deslistada.
+- **Supervivencia**: λ (tasa anual de desaparición de empresas listadas) = mediana por fecha de 1 − (cov_t / cov_hoy)^(1/años).
+  Fracción deslistada a h años d_h = 1 − (1−λ)^h; resultado de las deslistadas: 55% compradas (M ≈ 1.25·1.07^(h/2), σ log 0.3)
+  y 45% fallidas (M ≈ 0.15, σ log 0.9). `summary[t][h].adj.{central,pessimist,optimist}` = CAGR corregidos.
+- **Calibración** → `public/calibration.json`: por teoría y horizonte, tramos del percentil del ranking (bordes
+  0, .1, … .9, .95, .98, .995, 1) con 50 cuantiles del múltiplo realizado (mezclando deslistadas), P(pérdida), P(<0.5x),
+  P(≥2x/5x/10x) con encogimiento bayesiano (25 pseudo-obs. del universo). La app interpola por percentil y horizonte.
+- **Validación**: `oos[h]` (walk-forward: tablas solo con cohortes ya conocidas; Brier skill, cobertura 80%),
+  `significance[h]` (top 20 vs 2,000 portafolios aleatorios por fecha) y `baselines` (top 20 por un solo factor).

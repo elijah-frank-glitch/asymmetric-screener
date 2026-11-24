@@ -1,3 +1,4 @@
+import Validation from "./Validation.jsx";
 import React, { useEffect, useMemo, useState } from "react";
 import { fmtPct, cagrClass } from "../format.js";
 import { loadBacktest } from "../backtestData.js";
@@ -96,7 +97,7 @@ export function BacktestView({ B }) {
       </p>
       <div className="warnbox" style={{ marginBottom: 14, maxWidth: 900 }}>
         <b>Limitaciones importantes.</b> Solo cubre EE.UU.: no existe un histórico equivalente para las otras ~48.000 acciones globales del screener.
-        Hay <b>sesgo de supervivencia</b>: solo entran empresas que siguen cotizando hoy, así que las quiebras y las compradas no aparecen, lo que infla los retornos de todos los grupos (incluido el universo).
+        Hay <b>sesgo de supervivencia</b>: solo hay precios de empresas que siguen cotizando hoy. Las cifras principales están sin corregir; la sección <i>Validación científica</i> muestra la corrección estimada.
         El consenso de analistas y los datos trimestrales no existen en el histórico, así que esos factores no influyen. Un buen backtest no garantiza resultados futuros.
         {notes.length > 0 && (
           <details style={{ marginTop: 6 }}>
@@ -136,6 +137,8 @@ export function BacktestView({ B }) {
           <Kpis sum={sum} h={h} />
 
           <Conclusion th={th} h={h} sum={sum} calib={calib} ic={h === 1 ? ic1 : ic5} icH={h === 1 ? 1 : 5} />
+
+          <Validation B={B} h={h} theory={th.id} />
 
           <div className="box">
             <h4>Retorno acumulado a {hLabel(h)} por fecha de inicio · {th.name || th.id}</h4>

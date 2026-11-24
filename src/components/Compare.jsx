@@ -58,7 +58,7 @@ export default function Compare({ D, meta, R, settings, syms, rankPos, total, on
     { l: "Escenario base", better: 1, vals: evs.map((e) => e?.base), f: (x) => <span style={{ color: "var(--base)" }}>{fmtX(x)}</span> },
     { l: "Escenario bajista", better: 1, vals: evs.map((e) => e?.bear), f: (x) => <span style={{ color: "var(--bear)" }}>{fmtX(x)}</span> },
     { l: "Score ADN Multibagger", better: 1, vals: idx.map((i) => R.score[i] * 100), f: (x) => Math.round(x) },
-    { l: "Confianza en los datos", better: 1, vals: idx.map((i) => R.conf[i] * 100), f: (x) => `${Math.round(x)}%` },
+    { l: "Integridad de datos", better: 1, vals: idx.map((i) => R.conf[i] * 100), f: (x) => `${Math.round(x)}%` },
     { l: "Kelly individual f*", better: 1, vals: evs.map((e) => (e ? e.kelly * 100 : NaN)), f: (x) => `${Math.round(x)}%` },
     { l: "Posición en el ranking", better: -1, vals: idx.map((i) => (rankPos[i] >= 0 ? rankPos[i] + 1 : NaN)), f: (x) => `#${x.toLocaleString("es")}`, hint: `de ${total.toLocaleString("es")}` },
   ];

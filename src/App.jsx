@@ -12,6 +12,7 @@ import Track from "./components/Track.jsx";
 import Backtest from "./components/Backtest.jsx";
 import Compare from "./components/Compare.jsx";
 import { encodeState, decodeHash, applyShared, shareUrl, shareLink, MAX_COMPARE } from "./share.js";
+import { useCalTables, calDist, calKelly, calOutcomes, theoryOf, RF_ANNUAL } from "./calibration.js";
 
 const STORE = "asymmetric-settings-v3";
 const defaultSettings = () => ({
@@ -21,6 +22,7 @@ const defaultSettings = () => ({
   horizon: 5,
   nPicks: 5,
   weighting: "kelly",
+  distMode: "cal", // "cal" = distribución histórica calibrada · "model" = escenarios del modelo
   maxW: 0.4,
   rankBy: "elog",
   capital: 10000,
@@ -165,9 +167,38 @@ export default function App() {
     return idx;
   }, [D, R, settings.filters, rankVal, dataVer]);
 
+  // ---- Calibración: percentil del ranking (por crecimiento geométrico esperado, sobre el universo con filtros por
+  // defecto, igual que el backtest) → distribución histórica realizada. Se precalcula en una rejilla de percentiles.
+  const CT = useCalTables();
+  const cal = useMemo(() => {
+    if (!CT || !R || !D) return null;
+    const theory = theoryOf(settings), H = settings.horizon;
+    if (!CT.tables[theory] && !CT.tables.adn) return null;
+    const ref = [];
+    for (let i = 0; i < D.n; i++) if (!Number.isNaN(R.elog[i]) && passesFilters(D, i, DEFAULT_FILTERS)) ref.push(R.elog[i]);
+    ref.sort((a, b) => a - b);
+    const N = ref.length;
+    if (N < 50) return null;
+    const pctOfVal = (v) => { let lo = 0, hi = N; while (lo < hi) { const m = (lo + hi) >> 1; if (ref[m] < v) lo = m + 1; else hi = m; } return Math.min(1, Math.max(0, lo / (N - 1))); };
+    const G = 401;
+    const grid = Array.from({ length: G }, (_, k) => calDist(CT, theory, H, k / (G - 1)));
+    const gk = grid.map((d) => calKelly(d, H));
+    const n = D.n, mk = () => new Float32Array(n).fill(NaN);
+    const pct = mk(), med = mk(), mean = mk(), pLoss = mk(), p2x = mk(), p5x = mk(), p10x = mk(), kelly = mk();
+    for (let i = 0; i < n; i++) {
+      if (Number.isNaN(R.elog[i])) continue;
+      const p = pctOfVal(R.elog[i]);
+      const d = grid[Math.round(p * (G - 1))];
+      pct[i] = p; med[i] = d.cagrMed; mean[i] = d.cagrMean; pLoss[i] = d.pLoss; p2x[i] = d.p2x; p5x[i] = d.p5x; p10x[i] = d.p10x; kelly[i] = gk[Math.round(p * (G - 1))];
+    }
+    const distAt = (p, h = H) => calDist(CT, theory, h, p);
+    return { CT, theory, H, N, pct, med, mean, pLoss, p2x, p5x, p10x, kelly, distAt, distOf: (i) => (Number.isNaN(pct[i]) ? null : distAt(pct[i])), universe: grid[Math.round(0.5 * (G - 1))] };
+  }, [CT, R, D, settings.preset, settings.horizon]);
+
   const rankPos = useMemo(() => { const m = new Int32Array(D ? D.n : 0).fill(-1); ranked.forEach((i, k) => (m[i] = k)); return m; }, [ranked, D]);
 
   // portafolio
+  const useCal = settings.distMode !== "model" && !!cal;
   const portfolio = useMemo(() => {
     if (!D || !R || !ranked.length) return null;
     const excl = new Set(settings.excluded);
@@ -182,17 +213,35 @@ export default function App() {
         perInd[k] = (perInd[k] || 0) + 1;
       }
       const ev = evaluate(companyInputs(D, i, R.quality[i]), settings.horizon, settings.params, R.score[i], true);
-      if (ev) picks.push({ i, ind: D.industry[i], sec: D.sector[i], ...ev, score: R.score[i] });
+      if (!ev) continue;
+      const cd = cal ? cal.distOf(i) : null;
+      picks.push({ i, ind: D.industry[i], sec: D.sector[i], ...ev, modelOutcomes: ev.outcomes, score: R.score[i], cal: cd, calKelly: cd ? calKelly(cd, settings.horizon) : NaN,
+        outcomes: useCal && cd ? calOutcomes(cd) : ev.outcomes });
     }
-    const w = buildWeights(picks, settings.weighting, settings.maxW);
-    const dist = portfolioDistribution(picks, w);
+    const H = settings.horizon;
+    const rfAt = (t) => Math.pow(1 + RF_ANNUAL, t);
+    const w = buildWeights(picks, settings.weighting, settings.maxW, { cash: rfAt(H) });
+    const dist = portfolioDistribution(picks, w, 6000, undefined, rfAt(H));
+    const cashW = dist.cash;
     const steps = picks[0]?.paths.exp.length || 0;
-    const path = Array.from({ length: steps }, (_, t) => picks.reduce((s, p, j) => s + w[j] * p.paths.exp[t], 0));
-    const pathBull = Array.from({ length: steps }, (_, t) => picks.reduce((s, p, j) => s + w[j] * p.paths.bull[t], 0));
-    const pathBase = Array.from({ length: steps }, (_, t) => picks.reduce((s, p, j) => s + w[j] * p.paths.base[t], 0));
-    const pathBear = Array.from({ length: steps }, (_, t) => picks.reduce((s, p, j) => s + w[j] * p.paths.bear[t], 0));
-    return { picks, w, dist, path, pathBull, pathBase, pathBear };
-  }, [D, R, ranked, settings.nPicks, settings.weighting, settings.maxW, settings.excluded, settings.maxPerIndustry, settings.horizon, settings.params]);
+    let path, pathBull, pathBase, pathBear;
+    if (useCal && picks.every((p) => p.cal)) {
+      // año por año con la distribución calibrada a ese horizonte (media, mediana y percentiles 10/90 del portafolio)
+      const yr = Array.from({ length: steps }, (_, t) => {
+        const h = Math.min(t + 1, H);
+        const pk = picks.map((p) => ({ ...p, outcomes: calOutcomes(cal.distAt(cal.pct[p.i], h)) }));
+        return portfolioDistribution(pk, w, 3000, undefined, rfAt(h));
+      });
+      path = yr.map((d) => d.mean); pathBull = yr.map((d) => d.p90); pathBase = yr.map((d) => d.median); pathBear = yr.map((d) => d.p10);
+    } else {
+      const cashPath = (t) => cashW * rfAt(Math.min(t + 1, H));
+      path = Array.from({ length: steps }, (_, t) => cashPath(t) + picks.reduce((s, p, j) => s + w[j] * p.paths.exp[t], 0));
+      pathBull = Array.from({ length: steps }, (_, t) => cashPath(t) + picks.reduce((s, p, j) => s + w[j] * p.paths.bull[t], 0));
+      pathBase = Array.from({ length: steps }, (_, t) => cashPath(t) + picks.reduce((s, p, j) => s + w[j] * p.paths.base[t], 0));
+      pathBear = Array.from({ length: steps }, (_, t) => cashPath(t) + picks.reduce((s, p, j) => s + w[j] * p.paths.bear[t], 0));
+    }
+    return { picks, w, cash: cashW, dist, path, pathBull, pathBase, pathBear, mode: useCal ? "cal" : "model" };
+  }, [D, R, ranked, cal, useCal, settings.nPicks, settings.weighting, settings.maxW, settings.excluded, settings.maxPerIndustry, settings.horizon, settings.params]);
   const pickSet = useMemo(() => new Set(portfolio?.picks.map((p) => p.i) || []), [portfolio]);
 
   if (err) return <div className="loading"><div>Error cargando datos: {err}</div></div>;
@@ -243,7 +292,7 @@ export default function App() {
           </aside>
           <main className="main">
             <Screener D={D} meta={meta} R={R} ranked={ranked} settings={settings} update={update} sel={sel} setSel={setSel}
-              sort={sort} setSort={setSort} rankVal={rankVal} pickSet={pickSet} busy={busy} dataVer={dataVer}
+              sort={sort} setSort={setSort} rankVal={rankVal} pickSet={pickSet} busy={busy} dataVer={dataVer} cal={cal}
               cmpSet={cmpSet} toggleCmp={toggleCmp} cmpFull={cmp.length >= MAX_COMPARE} />
           </main>
         </div>
@@ -254,7 +303,7 @@ export default function App() {
             <Sidebar D={D} meta={meta} settings={settings} update={update} />
           </aside>
           <main className="main">
-            <Portfolio D={D} meta={meta} R={R} portfolio={portfolio} settings={settings} update={update} setSel={setSel} rankPos={rankPos} />
+            <Portfolio D={D} meta={meta} R={R} portfolio={portfolio} settings={settings} update={update} setSel={setSel} rankPos={rankPos} cal={cal} />
           </main>
         </div>
       )}
@@ -266,7 +315,7 @@ export default function App() {
       {sel != null && R && (
         <>
           <div className="overlay" onClick={() => setSel(null)} />
-          <Detail D={D} meta={meta} R={R} i={sel} settings={settings} rank={rankPos[sel]} total={ranked.length} onClose={() => setSel(null)}
+          <Detail D={D} meta={meta} R={R} i={sel} settings={settings} cal={cal} rank={rankPos[sel]} total={ranked.length} onClose={() => setSel(null)}
             inPortfolio={pickSet.has(sel)} update={update}
             inCompare={cmpSet.has(D.sym[sel])} cmpFull={cmp.length >= MAX_COMPARE} onCompare={() => toggleCmp(D.sym[sel])}
             onShare={() => doShare({ sym: D.sym[sel] }, `${D.name[sel]} · Asymmetric`)} />
@@ -285,7 +334,7 @@ export default function App() {
         </div>
       )}
       {cmpOpen && R && cmp.length > 0 && (
-        <Compare D={D} meta={meta} R={R} settings={settings} syms={cmp} rankPos={rankPos} total={ranked.length}
+        <Compare D={D} meta={meta} R={R} settings={settings} cal={cal} syms={cmp} rankPos={rankPos} total={ranked.length}
           onClose={() => setCmpOpen(false)} onRemove={toggleCmp}
           onOpen={(i) => { setCmpOpen(false); setSel(i); }}
           onShare={() => doShare({ cv: true }, "Comparación · Asymmetric")} />

@@ -306,7 +306,7 @@ function CompanyPage({ D, meta, cat, p, j, w, cap, H, co, cal }) {
         <div><small>Retorno anual esperado</small><b className={tone(p.cagr)}>{fmtPct(p.cagr * 100)}</b></div>
         <div><small>Retorno calibrado</small><b className={tone(cal)}>{ok(cal) ? fmtPct(cal * 100) : "—"}</b></div>
         <div><small>Múltiplo esperado</small><b>{fmtX(p.E)}</b></div>
-        <div><small>Confianza en los datos</small><b>{pct0(conf.conf)}</b></div>
+        <div><small>Integridad de datos</small><b>{pct0(conf.conf)}</b></div>
       </div>
 
       <h3>Qué hace</h3>
@@ -345,7 +345,7 @@ function CompanyPage({ D, meta, cat, p, j, w, cap, H, co, cal }) {
         )}
       </div>
 
-      <h3>Alertas de confianza</h3>
+      <h3>Alertas de integridad de datos</h3>
       {conf.why.length > 0 ? (
         <ul className="pr-alerts">{conf.why.map((x) => <li key={x}>{x}</li>)}</ul>
       ) : (

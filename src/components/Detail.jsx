@@ -4,7 +4,8 @@ import { detail, confidence, getRank } from "../engine.js";
 import { fmtUsd, fmtPct, fmtX, fmtMetric, cagrClass } from "../format.js";
 import PathChart from "./PathChart.jsx";
 import { avColor } from "./Screener.jsx";
-import { useCalibration, theoryOf } from "../calibration.js";
+import { useCalibration, theoryOf, calKelly } from "../calibration.js";
+import CalibratedBox from "./CalibratedBox.jsx";
 
 // Retorno esperado del modelo vs. lo que históricamente realizaron (mediana) las acciones de EE.UU. con un esperado similar
 export function CalibratedNote({ cagr, settings, label = "esta empresa" }) {
@@ -110,7 +111,7 @@ function SignalsBox({ co, isUS }) {
   );
 }
 
-export default function Detail({ D, meta, R, i, settings, rank, total, onClose, inPortfolio, update, inCompare, cmpFull, onCompare, onShare }) {
+export default function Detail({ D, meta, R, i, settings, rank, total, onClose, inPortfolio, update, inCompare, cmpFull, onCompare, onShare, cal }) {
   const [co, setCo] = useState(null);
   useEffect(() => { setCo(null); loadCompany(i).then(setCo); }, [i]);
   useEffect(() => {
@@ -120,6 +121,7 @@ export default function Detail({ D, meta, R, i, settings, rank, total, onClose, 
 
   const ev = useMemo(() => detail(D, i, settings, R.score, R.quality), [D, i, settings, R]);
   const conf = useMemo(() => confidence(D, i), [D, i]);
+  const cd = useMemo(() => (cal ? cal.distOf(i) : null), [cal, i]);
   const cat = useMemo(() => Object.fromEntries(meta.catalog.map((m) => [m.id, m])), [meta]);
   const H = settings.horizon;
   const ind = D.industry[i];
@@ -171,16 +173,16 @@ export default function Detail({ D, meta, R, i, settings, rank, total, onClose, 
         ) : (
           <>
             <div className="cards">
-              <div className="card"><small>Retorno anual esperado</small><b className={cagrClass(ev.cagr)}>{fmtPct(ev.cagr * 100)}</b><em>a {H} años</em></div>
-              <div className="card"><small>Múltiplo esperado</small><b className={cagrClass(ev.cagr)}>{fmtX(ev.E)}</b><em>${Math.round(settings.capital * ev.E).toLocaleString("es")} por cada ${settings.capital.toLocaleString("es")}</em></div>
               <div className="card"><small>Score ADN Multibagger</small><b>{Math.round(R.score[i] * 100)}</b><em>{rank >= 0 ? `#${rank + 1} de ${total.toLocaleString("es")}` : "fuera del filtro"}</em></div>
-              <div className="card"><small>Kelly individual f*</small><b>{Math.round(ev.kelly * 100)}%</b><em>confianza datos {Math.round(conf.conf * 100)}%</em></div>
+              <div className="card"><small>Integridad de datos</small><b className={conf.conf < 0.6 ? "neg" : ""}>{Math.round(conf.conf * 100)}</b><em>{conf.why.length ? `${conf.why.length} alerta${conf.why.length > 1 ? "s" : ""}` : "sin alertas"}</em></div>
+              <div className="card"><small>Retorno del modelo</small><b className={cagrClass(ev.cagr)}>{fmtPct(ev.cagr * 100)}</b><em>{fmtX(ev.E)} a {H}a · sin calibrar</em></div>
+              <div className="card"><small>Kelly con escenarios del modelo</small><b>{Math.round(ev.kelly * 100)}%</b><em>{cd ? "ver el calibrado abajo" : "sin calibrar"}</em></div>
             </div>
 
-            <CalibratedNote cagr={ev.cagr} settings={settings} />
+            {cd ? <CalibratedBox dist={cd} pct={cal.pct[i]} H={H} kelly={calKelly(cd, H)} modelCagr={ev.cagr} capital={settings.capital} /> : <CalibratedNote cagr={ev.cagr} settings={settings} />}
 
             <div className="box">
-              <h4>Escenarios a {H} años</h4>
+              <h4>Escenarios del modelo a {H} años <span className="small" style={{ fontWeight: 400 }}>· proyección fundamental, probabilidades por supuesto (no calibradas)</span></h4>
               <table className="simple">
                 <thead><tr><th>Escenario</th><th>Probabilidad</th><th>Múltiplo</th><th>Retorno anual</th><th>${settings.capital.toLocaleString("es")} se vuelven</th></tr></thead>
                 <tbody>
@@ -235,7 +237,7 @@ export default function Detail({ D, meta, R, i, settings, rank, total, onClose, 
 
         {conf.why.length > 0 && (
           <div className="box">
-            <h4>Alertas de calidad de datos</h4>
+            <h4>Alertas de integridad de datos</h4>
             {conf.why.map((w) => <span key={w} className="tag">{w}</span>)}
           </div>
         )}

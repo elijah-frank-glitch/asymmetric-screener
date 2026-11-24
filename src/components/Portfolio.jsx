@@ -8,20 +8,27 @@ import { useCalibration, theoryOf } from "../calibration.js";
 
 const PAL = ["#34d399", "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb923c", "#4ade80", "#38bdf8", "#e879f9"];
 
-export default function Portfolio({ D, meta, R, portfolio, settings, update, setSel, rankPos }) {
-  const C = useCalibration(theoryOf(settings));
+export default function Portfolio({ D, meta, R, portfolio, settings, update, setSel, rankPos, cal }) {
+  const Cold = useCalibration(theoryOf(settings));
   const [report, setReport] = useState(null); // null | "print" (abre e imprime) | "preview" (solo vista previa)
   const closeReport = useCallback(() => setReport(null), []);
   if (!R || !portfolio) return <div className="loading">Calculando…</div>;
-  const { picks, w, dist, path, pathBull, pathBase, pathBear } = portfolio;
+  const { picks, w, dist, path, pathBull, pathBase, pathBear, mode } = portfolio;
+  const isCal = mode === "cal";
+  const cash = portfolio.cash || 0;
   const H = settings.horizon;
   const cap = settings.capital;
-  const E = path[path.length - 1] || 1;
+  const E = isCal ? dist.mean : path[path.length - 1] || 1;
   const cagr = Math.pow(E, 1 / H) - 1;
   const medCagr = Math.pow(Math.max(dist.median, 1e-6), 1 / H) - 1;
-  // retorno calibrado con el backtest: CAGR histórico mediano por empresa, combinado con los pesos
-  const calC = C ? picks.map((p) => C.cal.map(p.cagr)) : null;
-  const calPort = calC ? Math.pow(picks.reduce((s, _, j) => s + w[j] * Math.pow(1 + calC[j], C.H), 0), 1 / C.H) - 1 : null;
+  const geoCagr = Math.exp(dist.meanLog / H) - 1;
+  // retorno calibrado por empresa (mediana histórica de su percentil) y del portafolio (con los mismos pesos)
+  const hasCal = picks.length > 0 && picks.every((p) => p.cal);
+  const C = hasCal ? { H } : Cold;
+  const calC = hasCal ? picks.map((p) => p.cal.cagrMed) : Cold ? picks.map((p) => Cold.cal.map(p.cagr)) : null;
+  const calPort = isCal && hasCal ? medCagr : calC ? Math.pow(picks.reduce((s, _, j) => s + w[j] * Math.pow(1 + calC[j], C.H), 0) + cash * Math.pow(1.03, C.H), 1 / C.H) - 1 : null;
+  const modelE = picks.reduce((s, p, j) => s + w[j] * p.E, 0) + cash * Math.pow(1.03, H);
+  const modelCagr = Math.pow(modelE, 1 / H) - 1;
 
   return (
     <div className="page">
@@ -38,8 +45,16 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
       )}
       <p className="lead">
         Las {settings.nPicks} acciones con mayor {settings.rankBy === "score" ? "score ADN" : settings.rankBy === "kelly" ? "asimetría (Kelly × retorno)" : settings.rankBy === "elog" ? "crecimiento esperado (geométrico)" : "retorno esperado"} según la teoría <b>“{settingsPresetName(settings)}”</b> y tus filtros.
-        Se compra hoy y no se toca hasta el año {H}. Los pesos salen de <b>{WEIGHTING[settings.weighting].label}</b>.
+        Se compra hoy y no se toca hasta el año {H}. Los pesos salen de <b>{WEIGHTING[settings.weighting]?.label || settings.weighting}</b>
+        {" "}aplicado a {isCal ? <><b>la distribución histórica calibrada</b> (lo que realmente pasó en el backtest con acciones en la misma posición del ranking)</> : <><b>los escenarios del modelo</b> (proyección sin calibrar: optimista)</>}.
       </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "4px 0 10px" }}>
+        <span className="small">Probabilidades:</span>
+        <div className="modetoggle" role="group" aria-label="Distribución usada">
+          <button className={isCal ? "on" : ""} disabled={!cal} onClick={() => update({ distMode: "cal" })} title={cal ? "" : "La calibración aún no se cargó"}>Calibradas (históricas)</button>
+          <button className={!isCal ? "on" : ""} onClick={() => update({ distMode: "model" })}>Escenarios del modelo</button>
+        </div>
+      </div>
 
       <div className="pgrid">
         <div>
@@ -58,7 +73,7 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
               <select value={settings.weighting} onChange={(e) => update({ weighting: e.target.value })} style={{ width: "100%" }}>
                 {Object.entries(WEIGHTING).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
-              <div className="hint">{WEIGHTING[settings.weighting].desc}</div>
+              <div className="hint">{WEIGHTING[settings.weighting]?.desc}</div>
             </div>
             <div className="field">
               <label>Peso máximo por posición <b>{Math.round(settings.maxW * 100)}%</b></label>
@@ -84,13 +99,19 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
 
         <div>
           <div className="kpis">
-            <div className="card"><small>Valor esperado en {H}a</small><b className={cagrClass(cagr)}>{fmtUsd(cap * E)}</b><em>{fmtX(E)} · {fmtPct(cagr * 100)} anual</em></div>
-            <div className="card"><small>Resultado mediano</small><b>{fmtUsd(cap * dist.median)}</b><em>{fmtX(dist.median)} · {fmtPct(medCagr * 100)} anual</em></div>
+            <div className="card"><small>Resultado mediano{isCal ? " (histórico)" : ""}</small><b className={cagrClass(medCagr)}>{fmtUsd(cap * dist.median)}</b><em>{fmtX(dist.median)} · {fmtPct(medCagr * 100)} anual</em></div>
+            <div className="card"><small>Valor esperado (media) en {H}a</small><b className={cagrClass(cagr)}>{fmtUsd(cap * E)}</b><em>{fmtX(E)} · {fmtPct(cagr * 100)} anual · geométrico {fmtPct(geoCagr * 100)}</em></div>
             <div className="card"><small>Rango 10%–90%</small><b style={{ fontSize: 15 }}>{fmtX(dist.p10)} – {fmtX(dist.p90)}</b><em>{fmtUsd(cap * dist.p10)} a {fmtUsd(cap * dist.p90)}</em></div>
             <div className="card"><small>Prob. de perder dinero</small><b className={dist.pLoss > 0.25 ? "neg" : ""}>{Math.round(dist.pLoss * 100)}%</b><em>≥2x: {Math.round(dist.p2x * 100)}% · ≥5x: {Math.round(dist.p5x * 100)}% · ≥10x: {Math.round(dist.p10x * 100)}%</em></div>
           </div>
 
-          {calPort != null && (
+          {cash > 0.005 && (
+            <div className="box small" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <b style={{ fontSize: 16, fontFamily: "var(--mono)" }}>{Math.round(cash * 100)}% en efectivo</b>
+              <span style={{ flex: 1, minWidth: 220 }}>{settings.weighting === "halfkelly" ? "Medio Kelly clásico: la mitad de cada peso Kelly y el resto en efectivo (3% anual)." : "Kelly deja esta parte en efectivo (3% anual): con estas probabilidades, apostar más reduce el crecimiento esperado de largo plazo, o el tope por posición no deja invertir más."} Si quieres estar 100% invertido, elige “Kelly 100% invertido”.</span>
+            </div>
+          )}
+          {!isCal && calPort != null && (
             <div className="box" style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ minWidth: 160 }}>
                 <div className="small">Retorno calibrado con el backtest de EE.UU.</div>
@@ -113,7 +134,7 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
             </div>
             <div style={{ overflowX: "auto" }}>
               <table className="simple">
-                <thead><tr><th>Empresa</th><th>Peso</th><th>Monto</th><th>Ret. anual esp.</th>{calC && <th title="Retorno calibrado con el backtest de EE.UU.">Ret. calibrado</th>}<th>Múltiplo esp.</th><th>Alc. / Base / Baj.</th><th>P(ruina)</th><th>Valor final esp.</th></tr></thead>
+                <thead><tr><th>Empresa</th><th>Peso</th><th>Monto</th>{calC && <th title="Retorno anual mediano histórico de su percentil del ranking">Ret. calibrado</th>}{hasCal && <th title="Probabilidad histórica de perder dinero">P(pérdida)</th>}{hasCal && <th title="Probabilidad histórica de duplicar">P(≥2x)</th>}<th title="Proyección del modelo, sin calibrar">Ret. modelo</th>{!isCal && <><th>Múltiplo esp.</th><th>Alc. / Base / Baj.</th><th>P(ruina)</th></>}<th>Valor final esp.</th></tr></thead>
                 <tbody>
                   {picks.map((p, j) => (
                     <tr key={p.i} style={{ cursor: "pointer" }} onClick={() => setSel(p.i)}>
@@ -125,15 +146,18 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
                       </td>
                       <td style={{ color: PAL[j % PAL.length], fontWeight: 600 }}>{(w[j] * 100).toFixed(1)}%</td>
                       <td>{fmtUsd(cap * w[j])}</td>
-                      <td className={cagrClass(p.cagr)}>{fmtPct(p.cagr * 100)}</td>
                       {calC && <td className={cagrClass(calC[j])}>{fmtPct(calC[j] * 100)}</td>}
-                      <td>{fmtX(p.E)}</td>
+                      {hasCal && <td>{Math.round(p.cal.pLoss * 100)}%</td>}
+                      {hasCal && <td>{Math.round(p.cal.p2x * 100)}%</td>}
+                      <td className={cagrClass(p.cagr)}>{fmtPct(p.cagr * 100)}</td>
+                      {!isCal && <><td>{fmtX(p.E)}</td>
                       <td><span className="scen" style={{ justifyContent: "flex-end" }}><span className="b">{fmtX(p.bull, 1)}</span><span className="m">{fmtX(p.base, 1)}</span><span className="r">{fmtX(p.bear, 1)}</span></span></td>
-                      <td>{Math.round(p.probs.ruin * 100)}%</td>
-                      <td>{fmtUsd(cap * w[j] * p.E)}</td>
+                      <td>{Math.round(p.probs.ruin * 100)}%</td></>}
+                      <td>{fmtUsd(cap * w[j] * (isCal && p.cal ? p.cal.mean : p.E))}</td>
                     </tr>
                   ))}
-                  <tr className="tot"><td style={{ fontFamily: "var(--sans)" }}>Portafolio</td><td>100%</td><td>{fmtUsd(cap)}</td><td className={cagrClass(cagr)}>{fmtPct(cagr * 100)}</td>{calC && <td className={cagrClass(calPort)}>{fmtPct(calPort * 100)}</td>}<td>{fmtX(E)}</td><td></td><td></td><td>{fmtUsd(cap * E)}</td></tr>
+                  {cash > 0.005 && <tr><td style={{ fontFamily: "var(--sans)" }}>Efectivo (3% anual)</td><td>{(cash * 100).toFixed(1)}%</td><td>{fmtUsd(cap * cash)}</td>{calC && <td>{fmtPct(3)}</td>}{hasCal && <td>0%</td>}{hasCal && <td>0%</td>}<td>{fmtPct(3)}</td>{!isCal && <><td>{fmtX(Math.pow(1.03, H))}</td><td></td><td>0%</td></>}<td>{fmtUsd(cap * cash * Math.pow(1.03, H))}</td></tr>}
+                  <tr className="tot"><td style={{ fontFamily: "var(--sans)" }}>Portafolio</td><td>100%</td><td>{fmtUsd(cap)}</td>{calC && <td className={cagrClass(calPort)}>{fmtPct(calPort * 100)}</td>}{hasCal && <td>{Math.round(dist.pLoss * 100)}%</td>}{hasCal && <td>{Math.round(dist.p2x * 100)}%</td>}<td className={cagrClass(modelCagr)}>{fmtPct(modelCagr * 100)}</td>{!isCal && <><td>{fmtX(E)}</td><td></td><td></td></>}<td>{fmtUsd(cap * E)}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -141,7 +165,12 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
 
           <div className="box">
             <h4>Valor del portafolio año por año</h4>
-            <PathChart H={H} capital={cap} height={240} series={[
+            <PathChart H={H} capital={cap} height={240} series={isCal ? [
+              { name: "Percentil 90", color: "var(--bull)", data: pathBull, dash: "4 3" },
+              { name: "Mediana", color: "var(--base)", data: pathBase, dash: "4 3" },
+              { name: "Percentil 10", color: "var(--bear)", data: pathBear, dash: "4 3" },
+              { name: "Media", color: "var(--exp)", data: path, bold: true },
+            ] : [
               { name: "Todo alcista", color: "var(--bull)", data: pathBull, dash: "4 3" },
               { name: "Todo base", color: "var(--base)", data: pathBase, dash: "4 3" },
               { name: "Todo bajista", color: "var(--bear)", data: pathBear, dash: "4 3" },
@@ -157,7 +186,7 @@ export default function Portfolio({ D, meta, R, portfolio, settings, update, set
                 </tbody>
               </table>
             </div>
-            <div className="small" style={{ marginTop: 6 }}>"Todo alcista/base/bajista" asume que todas las empresas caen en el mismo escenario a la vez (correlación perfecta). La distribución de arriba (mediana, rango 10–90% y probabilidades) y los pesos Kelly modelan correlación entre empresas (6,000 simulaciones): ρ≈0.6 dentro de una misma industria, ≈0.3 dentro de un sector y ≈0.15 con el resto del mercado; el valor esperado no depende de la correlación.</div>
+            <div className="small" style={{ marginTop: 6 }}>{isCal ? <>Con probabilidades calibradas, cada año se simula el portafolio (3,000 escenarios correlacionados) con la distribución histórica de su percentil del ranking a ese plazo; las líneas son la media, la mediana y los percentiles 10 y 90. En modo modelo, </> : null}"Todo alcista/base/bajista" asume que todas las empresas caen en el mismo escenario a la vez (correlación perfecta). La distribución de arriba (mediana, rango 10–90% y probabilidades) y los pesos Kelly modelan correlación entre empresas (6,000 simulaciones): ρ≈0.6 dentro de una misma industria, ≈0.3 dentro de un sector y ≈0.15 con el resto del mercado; el valor esperado no depende de la correlación.</div>
           </div>
         </div>
       </div>

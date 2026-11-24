@@ -24,9 +24,48 @@ const cols = {};
 for (const m of METRICS) if (m.tv) cols[m.id] = col(m.tv).map(num);
 const raw = { ebitda_g_fy: col("ebitda_yoy_growth_fy").map(num), assets_g_fy: col("total_assets_yoy_growth_fy").map(num) };
 
+const C = cols;
+// ---------- integridad: reconciliación de la capitalización
+// TradingView a veces reporta la capitalización de una sola clase de acciones (A/H en China, por ejemplo) o con un
+// error de escala. Se compara con tres estimaciones independientes: precio × acciones / tipo de cambio implícito
+// (mediana por moneda y bolsa), P/S × ventas y P/E × utilidad neta. Si al menos dos coinciden entre sí (±60%) y la
+// reportada se aleja más de 2.5x de su consenso, se reemplaza y se recalculan los ratios que dependen de ella.
+{
+  const cur0 = col("currency"), ex0 = col("exchange");
+  const kOf = (i) => cur0[i] + "|" + ex0[i];
+  const grp = {};
+  for (let i = 0; i < n; i++) { const p = C.price[i], s = C.shares[i], m = C.mcap[i]; if (p > 0 && s > 0 && m > 0) (grp[kOf(i)] ??= []).push(p * s / m); }
+  const fx = {}; for (const [k, a] of Object.entries(grp)) if (a.length >= 5) { a.sort((x, y) => x - y); fx[k] = a[a.length >> 1]; }
+  cols.mcap_fix = new Array(n).fill(null);
+  let fixed = 0;
+  for (let i = 0; i < n; i++) {
+    const m = C.mcap[i];
+    if (!(m > 0)) continue;
+    const alts = [];
+    if (C.price[i] > 0 && C.shares[i] > 0 && fx[kOf(i)]) alts.push(["px", C.price[i] * C.shares[i] / fx[kOf(i)]]);
+    if (C.ps[i] > 0 && C.revenue[i] > 0) alts.push(["ps", C.ps[i] * C.revenue[i]]);
+    if (C.pe[i] > 0 && C.nm[i] > 0 && C.revenue[i] > 0) alts.push(["pe", C.pe[i] * C.nm[i] / 100 * C.revenue[i]]);
+    // pares que coinciden; precio × acciones subestima en multiclase (solo una clase), así que hacia abajo no cuenta
+    let best = null;
+    for (let a = 0; a < alts.length; a++) for (let b = a + 1; b < alts.length; b++) {
+      const [na, va] = alts[a], [nb, vb] = alts[b];
+      if (Math.abs(Math.log(va / vb)) > Math.log(1.6)) continue;
+      const g = Math.sqrt(va * vb);
+      if (g < m && (na === "px" || nb === "px")) continue;
+      if (!best || Math.abs(Math.log(g / m)) > Math.abs(Math.log(best / m))) best = g;
+    }
+    if (best && Math.abs(Math.log(best / m)) > Math.log(2.5)) {
+      cols.mcap_fix[i] = Math.round((best / m) * 100) / 100;
+      if (C.ev[i] != null) C.ev[i] = C.ev[i] + (best - m);
+      C.mcap[i] = best;
+      fixed++;
+    }
+  }
+  console.log("Capitalizaciones reconciliadas:", fixed);
+}
+
 // ---------- métricas derivadas
 const div = (a, b) => (a != null && b != null && b !== 0 ? a / b : null);
-const C = cols;
 const derive = {
   fcf_yield: (i) => (C.mcap[i] > 0 && C.fcf[i] != null ? (C.fcf[i] / C.mcap[i]) * 100 : null),
   bm: (i) => (C.mcap[i] > 0 && C.equity[i] != null ? C.equity[i] / C.mcap[i] : null),

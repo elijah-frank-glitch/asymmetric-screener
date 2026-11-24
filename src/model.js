@@ -110,9 +110,13 @@ export function percentileRanks(values, direction) {
   for (let i = 0; i < n; i++) if (isNum(values[i])) idx.push(i);
   idx.sort((a, b) => values[a] - values[b]);
   const m = idx.length;
-  for (let r = 0; r < m; r++) {
-    const p = m > 1 ? r / (m - 1) : 0.5;
-    out[idx[r]] = direction < 0 ? 1 - p : p;
+  // Empates → rango promedio: dos empresas con el mismo valor reciben exactamente el mismo percentil
+  for (let r = 0; r < m;) {
+    let e = r;
+    while (e + 1 < m && values[idx[e + 1]] === values[idx[r]]) e++;
+    const p = m > 1 ? (r + e) / 2 / (m - 1) : 0.5;
+    for (let k = r; k <= e; k++) out[idx[k]] = direction < 0 ? 1 - p : p;
+    r = e + 1;
   }
   return out;
 }
@@ -168,6 +172,12 @@ function projectScenario(c, H, P, sc) {
   let nm0 = isNum(c.nm) ? clamp(c.nm, -300, 80) / 100 : (isNum(c.ebitda_m) ? c.ebitda_m / 200 : 0);
   // Utilidad neta mayor que la utilidad bruta = ganancias extraordinarias (venta de activos, revaluaciones)
   if (gm != null && gm > 0 && nm0 > gm * 0.85) nm0 = gm * 0.5;
+  // La utilidad que le corresponde al accionista común es la del P/E: si la utilidad neta total implica un P/E
+  // mucho menor, hay minoritarios o preferentes que se la llevan (o un dato erróneo) → se usa la del P/E.
+  if (isNum(c.pe) && c.pe > 0 && nm0 > 0) { const nmPE = mcap / c.pe / rev0; if (nmPE < nm0 / 1.5) nm0 = nmPE; }
+  // Utilidad neta muy por encima de la operativa = partidas no recurrentes (venta de activos, revaluaciones,
+  // participación en asociadas). Se proyecta desde el margen operativo después de impuestos.
+  if (isNum(c.om) && nm0 > c.om / 100 + 0.1) nm0 = Math.max(0, (c.om / 100) * 0.78);
   const ind = isNum(c.ind_nm) ? c.ind_nm / 100 : 0.07;
   let mT = Math.max(ind, gm != null ? 0.22 * gm : ind);
   mT = clamp(mT, 0.02, 0.35);
@@ -215,7 +225,12 @@ function projectScenario(c, H, P, sc) {
     dil = burning ? dil + 0.06 * k : dil + 0.005;
   }
 
-  const netCash = isNum(c.net_cash) ? c.net_cash : 0;
+  // Caja neta. En intermediarios financieros (bancos, brokers, aseguradoras) la caja y la deuda son el negocio, no un
+  // excedente: no se suman. En las demás:
+  //   · valuación por P/E (utilidad neta, ya después de intereses): la deuda ya está descontada en la utilidad, así que
+  //     no se resta otra vez; la caja excedente se suma al 50% (sus intereses ya están en parte dentro de la utilidad).
+  //   · valuación por ventas (empresa en pérdidas): P/S valora la empresa completa → Equity = valor − deuda + caja.
+  const netCash = c.interm ? 0 : isNum(c.net_cash) ? c.net_cash : 0;
   const divY = isNum(c.div_yield) ? clamp(c.div_yield, 0, 15) / 100 : 0;
   const path = [];
   let rev = rev0, nm = nm0, shares = 1, g = g0, cumDiv = 0;
@@ -239,7 +254,7 @@ function projectScenario(c, H, P, sc) {
       else if (a > 0) pe = Math.exp((1 - a) * Math.log(pe) + a * Math.log(clamp(c.pe, 3, 80)));
     }
     let equity;
-    if (ni > 0) equity = ni * pe + netCash;
+    if (ni > 0) equity = ni * pe + (P.netCashPE === "full" ? netCash : 0.5 * Math.max(netCash, 0));
     else {
       // empresa aún en pérdidas: valuación por ventas
       let ps = Math.max(0.3, 0.5 + 4 * g) * (gm != null ? clamp(gm * 2, 0.2, 1.6) : 0.6);
@@ -330,8 +345,9 @@ export function evaluate(c, H, P, score, withPaths = false) {
 // Construcción del portafolio
 // ---------------------------------------------------------------------------
 export const WEIGHTING = {
-  kelly: { label: "Kelly de portafolio", desc: "Pesos que maximizan el crecimiento geométrico esperado (E[ln riqueza]) de la canasta completa, simulando 6,000 combinaciones de escenarios (alcista/base/bajista/ruina) con correlación entre empresas: ρ≈0.6 si son de la misma industria, ≈0.3 si comparten sector y ≈0.15 (mercado) en otro caso. Varias empresas de una misma industria cuentan como una apuesta parcialmente repetida y reciben menos peso conjunto. Invierte el 100%, sin apalancamiento." },
-  halfkelly: { label: "Medio Kelly", desc: "50% Kelly de portafolio (con correlaciones) + 50% igual ponderado. Los profesionales usan fracciones de Kelly porque el modelo siempre tiene error de estimación." },
+  kelly: { label: "Kelly (puede dejar efectivo)", desc: "Pesos que maximizan el crecimiento geométrico esperado (E[ln riqueza]) de la canasta, simulando 6,000 escenarios conjuntos con correlación entre empresas (ρ≈0.6 misma industria, ≈0.3 mismo sector, ≈0.15 mercado). Puede dejar parte en efectivo (3% anual) si las apuestas no compensan su riesgo. Sin apalancamiento." },
+  halfkelly: { label: "Medio Kelly (clásico)", desc: "La mitad de cada peso Kelly y el resto en efectivo. Sacrifica ~25% del crecimiento esperado a cambio de ~50% menos volatilidad, y protege contra el error de estimación de las probabilidades (que siempre existe)." },
+  invested: { label: "Kelly 100% invertido", desc: "Kelly de portafolio obligado a invertir todo en las acciones elegidas (sin efectivo). Es el reparto óptimo SI decides estar 100% en estas empresas." },
   equal: { label: "Igual ponderado", desc: "1/N en cada empresa." },
   conviction: { label: "Por convicción (score ADN)", desc: "Peso proporcional al score ADN Multibagger." },
   return: { label: "Por retorno esperado", desc: "Peso proporcional al retorno esperado (CAGR)." },
@@ -456,12 +472,13 @@ export function kellyPortfolio(picks, samples = 6000, iters = 400, corr = DEFAUL
 }
 
 // Estadísticos del portafolio por Monte Carlo (mismas correlaciones): percentiles del múltiplo final
-export function portfolioDistribution(picks, weights, samples = 6000, corr = DEFAULT_CORR) {
+export function portfolioDistribution(picks, weights, samples = 6000, corr = DEFAULT_CORR, cashMult = 1) {
   const n = picks.length;
   const M = simulateScenarios(picks, samples, 999, corr);
   const out = new Float64Array(samples);
+  const cashW = Math.max(0, 1 - weights.reduce((a, b) => a + b, 0));
   for (let s = 0, base = 0; s < samples; s++, base += n) {
-    let v = 0;
+    let v = cashW * cashMult;
     for (let j = 0; j < n; j++) v += weights[j] * M[base + j];
     out[s] = v;
   }
@@ -472,11 +489,23 @@ export function portfolioDistribution(picks, weights, samples = 6000, corr = DEF
   const p2x = out.filter((x) => x >= 2).length / samples;
   const p5x = out.filter((x) => x >= 5).length / samples;
   const p10x = out.filter((x) => x >= 10).length / samples;
-  return { mean, p10: q(0.1), p25: q(0.25), median: q(0.5), p75: q(0.75), p90: q(0.9), pLoss, p2x, p5x, p10x };
+  const meanLog = out.reduce((a, b) => a + Math.log(Math.max(b, 1e-9)), 0) / samples;
+  return { cash: cashW, meanLog, mean, p10: q(0.1), p25: q(0.25), median: q(0.5), p75: q(0.75), p90: q(0.9), pLoss, p2x, p5x, p10x };
 }
 
 // picks: [{ outcomes, score, cagr, ind?, sec? }]. opts.corr opcional (por defecto DEFAULT_CORR).
+// opts.cash = múltiplo del efectivo al horizonte (p. ej. 1.03^H): activa Kelly con efectivo; los pesos pueden sumar < 1
+// y el resto queda en efectivo. Sin opts.cash, "kelly" y "halfkelly" se comportan como antes (100% invertido).
 export function buildWeights(picks, method, maxW = 0.4, opts = {}) {
+  if (opts.cash && (method === "kelly" || method === "halfkelly")) {
+    const n = picks.length;
+    if (!n) return [];
+    const cashPick = { outcomes: [[1, opts.cash]] }; // activo sin riesgo (no comparte factores)
+    const k = kellyPortfolio([...picks, cashPick], 6000, 400, opts.corr || DEFAULT_CORR).slice(0, n);
+    const f = method === "halfkelly" ? 0.5 : 1;
+    // tope por posición: lo que excede va a efectivo (no se redistribuye para no concentrar riesgo)
+    return k.map((x) => Math.min(maxW, x * f));
+  }
   const n = picks.length;
   if (!n) return [];
   let raw;
@@ -488,6 +517,7 @@ export function buildWeights(picks, method, maxW = 0.4, opts = {}) {
     case "conviction": raw = norm(picks.map((p) => Math.max(p.score, 0.01))); break;
     case "return": raw = norm(picks.map((p) => Math.max(p.cagr, 0.001))); break;
     case "halfkelly": { const k = kellyPortfolio(picks, 6000, 400, corr); raw = k.map((x, i) => 0.5 * x + 0.5 * eq[i]); break; }
+    case "invested": raw = kellyPortfolio(picks, 6000, 400, corr); break;
     default: raw = kellyPortfolio(picks, 6000, 400, corr);
   }
   // tope por posición con redistribución iterativa

@@ -4,7 +4,7 @@ import { percentileRanks, computeScores, evaluate, PRESETS, INFLATION } from "./
 // Métricas que el modelo necesita siempre (además de las de los pesos)
 export const MODEL_INPUTS = [
   "mcap", "revenue", "rev_g", "rev_g_q", "rev_cagr5", "rev_fwd_g", "gm", "nm", "fcf_m", "ebitda_m",
-  "roic", "rd_rev", "net_cash", "div_yield", "buyback", "liq_usd", "ps", "pe", "altman", "runway", "shares_g3",
+  "roic", "rd_rev", "net_cash", "div_yield", "buyback", "liq_usd", "ps", "pe", "altman", "runway", "shares_g3", "om", "mcap_fix", "fcf_yield",
 ];
 export const CORE_IDS = [
   ...new Set([...MODEL_INPUTS, ...Object.values(PRESETS).flatMap((p) => Object.keys(p.weights))]),
@@ -53,6 +53,8 @@ export function companyInputs(D, i, quality) {
   const indName = D.industries[D.industry[i]];
   c.cyc = CYCLICAL.has(indName);
   c.fin = D.sectors[D.sector[i]] === "Finance";
+  // Intermediarios financieros: su caja y su deuda son materia prima del negocio (depósitos, márgenes, reservas)
+  c.interm = c.fin && /Banks|Brokers|Insurance|Financial Conglomerates|Savings/.test(indName || "");
   c.altman = D.cols.altman?.[i];
   c.runway = D.cols.runway?.[i];
   c.conf = confidenceAll(D)[i];
@@ -70,8 +72,8 @@ export function computeQuality(D) {
   return q;
 }
 
-// Confianza en los datos (0..1) y motivos. Penaliza patrones que casi siempre son errores
-// de datos, ganancias extraordinarias o contabilidad difícil de proyectar.
+// Integridad de datos (0..1) y motivos. NO es una probabilidad: es un puntaje heurístico que penaliza patrones que
+// casi siempre son errores de datos, ganancias extraordinarias o contabilidad difícil de proyectar.
 export function confidence(D, i) {
   const v = (k) => D.cols[k]?.[i];
   const ok = (x) => typeof x === "number" && Number.isFinite(x);
@@ -87,7 +89,20 @@ export function confidence(D, i) {
   else if (ok(v("nm")) && ok(v("gm")) && v("nm") > v("gm") * 0.85 && v("nm") > 5) pen(0.3, "utilidad neta ≈ utilidad bruta (extraordinarios)");
   if (ok(v("rev_g")) && Math.abs(v("rev_g")) > 300) pen(0.3, "crecimiento > 300% (adquisición, base baja o error)");
   else if (ok(v("rev_g")) && Math.abs(v("rev_g")) > 150) pen(0.15, "crecimiento > 150% (posible efecto de base baja o adquisición)");
-  if (ok(v("pe")) && v("pe") > 0 && v("pe") < 3) pen(0.25, "P/E < 3");
+  // P/E reportado o, si falta, implícito (capitalización / utilidad neta)
+  const peEff = ok(v("pe")) && v("pe") > 0 ? v("pe") : v("nm") > 0 && v("revenue") > 0 && v("mcap") > 0 ? v("mcap") / (v("revenue") * v("nm") / 100) : null;
+  const peTag = ok(v("pe")) && v("pe") > 0 ? "P/E" : "P/E implícito";
+  if (ok(v("pe")) && v("pe") > 0 && v("nm") > 0 && v("revenue") > 0 && v("mcap") > 0) {
+    const r = v("pe") / (v("mcap") / (v("revenue") * v("nm") / 100));
+    if (r > 3 || r < 1 / 3) pen(0.3, "P/E no cuadra con la utilidad neta (minoritarios, preferentes o dato erróneo)");
+  }
+  if (peEff != null && peEff < 1) pen(0.5, peTag + " < 1 (derechos preferentes, minoritarios o dato erróneo)");
+  else if (peEff != null && peEff < 3) pen(0.25, peTag + " < 3");
+  if (ok(v("mcap_fix"))) pen(0.15, `capitalización reconciliada (TradingView ×${v("mcap_fix").toFixed(1)})`);
+  if (ok(v("fcf_m")) && v("fcf_m") > 100) pen(0.3, "FCF > ventas (flujos de clientes o no operativos)");
+  else if (ok(v("fcf_yield")) && v("fcf_yield") > 60) pen(0.25, "FCF yield > 60% (dato atípico)");
+  if (ok(v("gm")) && v("gm") < 15 && ok(v("ps")) && v("ps") < 0.15) pen(0.3, "ingresos de paso (margen bruto < 15% y P/S < 0.15)");
+  if (ok(v("om")) && ok(v("nm")) && v("nm") > v("om") + 10 && v("nm") > 10) pen(0.2, "utilidad neta muy superior a la operativa (no recurrente)");
   if (v("mcap") < 2e8) pen(0.1, "micro cap");
   if ((INFLATION[D.countries[D.country[i]]] || 0) >= 15) pen(0.15, "inflación alta");
   if (D.sectors[D.sector[i]] === "Finance") pen(0.1, "financiera (proyección por ventas menos fiable)");

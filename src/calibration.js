@@ -67,3 +67,31 @@ export function useCalibration(theory) {
   }, [theory]);
   return state;
 }
+
+// Calibración v2 (public/calibration.json): funciones puras en ./calcore.js; aquí solo la carga y el hook.
+export { calDist, calKelly, calOutcomes, RF_ANNUAL, rankPercentiles } from "./calcore.js";
+
+let calV2 = null;
+export function loadCalTables() {
+  if (!calV2) {
+    calV2 = fetch("/calibration.json", { cache: "no-cache" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (!j || !j.tables || !j.horizons) throw new Error("formato");
+        return j;
+      })
+      .catch((e) => { calV2 = null; throw e; });
+  }
+  return calV2;
+}
+export function useCalTables() {
+  const [T, setT] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    loadCalTables().then((j) => alive && setT(j)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return T;
+}
+

@@ -87,7 +87,7 @@ export default function Sidebar({ D, meta, settings, update }) {
           </select>
         </div>
         <div className="field">
-          <label>Confianza mínima en los datos <b>{Math.round((F.confMin || 0) * 100)}%</b></label>
+          <label>Integridad mínima de datos <b>{Math.round((F.confMin || 0) * 100)}%</b></label>
           <input type="range" min="0" max="1" step="0.05" value={F.confMin || 0} onChange={(e) => setF({ confMin: Number(e.target.value) })} />
           <div className="hint">Descarta empresas con datos incompletos, ganancias extraordinarias, inflación alta o contabilidad difícil de proyectar.</div>
         </div>

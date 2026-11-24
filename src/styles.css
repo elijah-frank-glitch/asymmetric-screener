@@ -268,3 +268,13 @@ table.simple tr.tot td { font-weight: 700; border-top: 1px solid var(--line2); }
 }
 @media print { .cmpbar, .toast, .cmpview { display: none !important; } }
 .tablewrap .tgrid { padding-bottom: 64px; } /* que la barra flotante de comparar no tape las últimas filas */
+
+/* Calibración histórica */
+.calbox { border-color: color-mix(in srgb, var(--accent) 35%, var(--line, #1e2a44)); }
+.distbars { position: relative; margin-top: 10px; }
+.distaxis { position: relative; height: 14px; font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.distaxis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.modetoggle { display: inline-flex; border: 1px solid var(--line, #1e2a44); border-radius: 8px; overflow: hidden; }
+.modetoggle button { background: transparent; color: var(--muted); border: 0; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+.modetoggle button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); font-weight: 600; }
+.valid h5 { margin: 14px 0 4px; font-size: 13px; color: var(--accent2); }

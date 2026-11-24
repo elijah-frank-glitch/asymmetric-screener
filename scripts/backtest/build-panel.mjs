@@ -19,7 +19,7 @@ const t0 = Date.now();
 
 const YEARS = Array.from({ length: 2025 - 2007 + 1 }, (_, k) => 2007 + k);
 const DATES = Array.from({ length: 2025 - 2011 + 1 }, (_, k) => `${2011 + k}-04-30`);
-const HORIZONS = [1, 3, 5];
+const HORIZONS = [1, 3, 5, 10];
 const LAG_DAYS = 75;
 const DAY = 86400e3;
 const NOW = Date.now();
@@ -96,8 +96,12 @@ function fwdReturn(p, k0, h) {
   const partial = kT > nowKey;
   const kEnd = partial ? nowKey : kT;
   const i1 = barAt(p, kEnd, partial ? 1 : 0);
-  if (i1 < 0 || !(p.a[i1] > 0) || i1 <= i0) return [null, partial]; // historial termina antes del horizonte
-  return [p.a[i1] / p.a[i0] - 1, partial];
+  if (i1 >= 0 && p.a[i1] > 0 && i1 > i0 && p.mk[i1] >= kEnd - 1) return [p.a[i1] / p.a[i0] - 1, partial, false];
+  // El historial termina antes del horizonte (dejó de cotizar: compra, quiebra, deslistado). NO se descarta: se devuelve el
+  // retorno hasta el último precio disponible y la marca "delisted"; run-backtest decide qué supuesto aplicar después.
+  let iL = -1; for (let j = p.a.length - 1; j > i0; j--) if (p.a[j] > 0 && p.mk[j] <= kEnd) { iL = j; break; }
+  if (iL < 0) return [null, partial, true];
+  return [p.a[iL] / p.a[i0] - 1, partial, true];
 }
 
 // ---------- 4) Fundamentales point-in-time
@@ -184,7 +188,7 @@ const deiF = (cik) => (Y) => F.EntityCommonStockSharesOutstanding[Y]?.get(cik) |
 const LISTED_FLOOR = Date.parse("2009-03-01T00:00:00Z"); // los precios de Yahoo empiezan en 2009-01
 const dilF = (cik) => (Y) => F.WeightedAverageNumberOfDilutedSharesOutstanding[Y]?.get(cik) || null;
 const r4 = (x) => (okn(x) ? Number(x.toPrecision(4)) : null);
-const snapshots = {}, fwd = {}, partial = {}, spy = {}, coverage = {};
+const snapshots = {}, fwd = {}, partial = {}, spy = {}, coverage = {}, delisted = {};
 let dropped = 0, sharesSrc = { dei: 0, dil: 0 };
 
 for (const date of DATES) {
@@ -194,13 +198,14 @@ for (const date of DATES) {
   const C = Object.fromEntries(COLS.map((c) => [c, new Array(NC).fill(null)]));
   const fyEnd = new Array(NC).fill(null);
   const FW = Object.fromEntries(HORIZONS.map((h) => [h, new Array(NC).fill(null)]));
+  const DL = Object.fromEntries(HORIZONS.map((h) => [h, []])); // índices cuyo historial terminó antes del horizonte
   const cov = { listed: 0, fundamentals: 0, mcap: 0, liq: 0 };
   for (let i = 0; i < NC; i++) {
     const p = prices[i], cik = companies[i].cik;
     const bi = barAt(p, k0, 0); // debe cotizar en el mes de la fecha
     if (bi < 0 || !(p.c[bi] > 0)) continue;
     cov.listed++;
-    for (const h of HORIZONS) FW[h][i] = r4(fwdReturn(p, k0, h)[0]);
+    for (const h of HORIZONS) { const [r, , dl] = fwdReturn(p, k0, h); FW[h][i] = r4(r); if (dl) DL[h].push(i); }
     const close = p.c[bi]; // ajustado por splits a hoy
     const price = close * splitsAfter(p, dMs); // precio tal como cotizaba en la fecha
     C.price[i] = r4(price);
@@ -275,6 +280,15 @@ for (const date of DATES) {
   }
   snapshots[date] = { fyEnd, cols: C };
   fwd[date] = FW;
+  delisted[date] = DL;
+  // Sesgo de supervivencia medible: emisores que reportaban a la SEC con ventas > $1M (CY y-1 visible) y acciones comunes
+  // en portada (dei), frente a los que tenemos con precio. Los que faltan dejaron de cotizar antes de hoy (o nunca cotizaron
+  // en NYSE/Nasdaq: OTC, solo deuda), así que es una cota superior del universo perdido.
+  { const inPanel = new Set(); for (let i = 0; i < NC; i++) if (C.mcap[i] > 0 && C.revenue[i] > 1e6) inPanel.add(companies[i].cik);
+    const sec = new Set(); const Ys = y - 1;
+    for (const c of REV) for (const [cik, e] of F[c][Ys] || []) if (e[0] > 1e6 && e[1] + LAG_DAYS * DAY <= dMs) sec.add(cik);
+    let both = 0; for (const c of inPanel) if (sec.has(c)) both++;
+    cov.secFilers = sec.size; cov.secInPanel = both; cov.panelWithRev = inPanel.size; }
   const pa = {}, sp = {};
   for (const h of HORIZONS) {
     const [r, part] = fwdReturn(spyP, k0, h);
@@ -282,18 +296,18 @@ for (const date of DATES) {
   }
   partial[date] = pa; spy[date] = sp;
   coverage[date] = cov;
-  console.log(`${date}: cotizan ${cov.listed}, con fundamentales ${cov.fundamentals}, con mcap ${cov.mcap}, con liquidez ${cov.liq}, con shares_g3 ${cov.sharesG3 || 0} | SPY 1/3/5a ${sp[1]} ${sp[3]} ${sp[5]}${pa[5] ? " (5a parcial)" : ""}`);
+  console.log(`${date}: cotizan ${cov.listed}, con fundamentales ${cov.fundamentals}, con mcap ${cov.mcap}, con liquidez ${cov.liq}, con shares_g3 ${cov.sharesG3 || 0}, SEC con ventas ${cov.secFilers} (en panel ${cov.secInPanel}), deslistadas 5a ${DL[5].length} | SPY 1/3/5a ${sp[1]} ${sp[3]} ${sp[5]}${pa[5] ? " (5a parcial)" : ""}`);
 }
 
 const panel = {
-  version: 1, builtAt: new Date().toISOString(), dates: DATES, companies, snapshots, fwd, partial, spy, coverage,
+  version: 1, builtAt: new Date().toISOString(), dates: DATES, companies, snapshots, fwd, partial, spy, coverage, delisted, horizons: HORIZONS,
   notes: [
     "Sesgo de supervivencia: solo empresas que cotizan HOY en NYSE/Nasdaq (mapa CIK→ticker actual de la SEC); las quebradas, compradas o deslistadas no están. Infla los retornos del universo y de cualquier estrategia.",
     "Fundamentales anuales de los frames XBRL de la SEC por año calendario (CY): CY(y-1) si fin + 75 días ≤ 30-abr, si no CY(y-2). Balance = corte instantáneo CYQ4I visible. Los frames toman el valor del último filing que reportó ese periodo (puede incluir reexpresiones posteriores).",
     "Métricas anuales (no TTM): ingresos = Revenues / RevenueFromContract... / SalesRevenueNet; utilidad bruta = GrossProfit o ingresos − costo; EBITDA ≈ utilidad operativa + D&A (sin D&A = solo operativa); si los conceptos de ingresos discrepan > 3x se toma el más cercano al año previo; margen bruto derivado se anula si deja > 60% de ventas en gastos no I+D; FCF = flujo operativo − capex; deuda = LongTermDebt o (no corriente + corriente); ROIC ≈ utilidad neta / (patrimonio + deuda).",
     "Acciones: dei EntityCommonStockSharesOutstanding (portada) ajustadas por splits; si faltan o parecen de una sola clase (< 60% de las diluidas) se usan las diluidas promedio. mcap = acciones × precio (ambos en base de hoy) = precio histórico sin ajustar × acciones de la época. Se descarta mcap si P/S > 1000 o < 0.005, P/E < 1 o FCF/mcap > 150% o < −300% (casi siempre acciones mal medidas: ADS con ratio ≠ 1, multiclase, Up-C).",
     "Precios mensuales de Yahoo Finance: precio = último cierre mensual en o antes de la fecha; off_low usa el mínimo de los 12 cierres mensuales (no el mínimo intradía de 52 semanas); liq_usd ≈ volumen mensual promedio de 3 meses / 21 × precio (aproximado).",
-    "Retornos hacia adelante con adjclose (dividendos + splits) de mes a mes; si el horizonte no ha terminado se mide hasta el último mes disponible (partial = true); null si el historial de precios termina antes.",
+    "Retornos hacia adelante con adjclose (dividendos + splits) de mes a mes; si el horizonte no ha terminado se mide hasta el último mes disponible (partial = true); si el historial de precios termina antes del horizonte se guarda el retorno hasta el último precio y el índice va en delisted[fecha][h] (run-backtest aplica el supuesto de deslistado; ya no se descartan).",
     "shares_g1 / shares_g3: cambio % anual de acciones (1 año y CAGR 3 años; + = dilución, − = recompras). Portada dei (visible a la fecha) o diluidas promedio del año fundamental, comparando dentro de la misma fuente (si discrepan > 10 pp/año se usan diluidas). Base de hoy con splits reales de Yahoo (se ignoran los 'splits' de spin-off con ratios no racionales); saltos residuales ≈ múltiplo entero ≥ 1.8x / ≤ 0.55x se tratan como split no ajustado; ratios fuera de [1/8, 8] → null. Recorte: g1 ∈ [−30, 150], g3 ∈ [−20, 80] %/año.",
     "Sin SIC (no está en el mapa de tickers): todas las empresas en una sola industria. Sin consenso, trimestrales, Piotroski ni Sloan: null.",
   ],

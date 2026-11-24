@@ -5,7 +5,7 @@ const ROW = 34;
 const COLORS = ["#34d399", "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb923c", "#4ade80"];
 export const avColor = (s) => COLORS[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
 
-export default function Screener({ D, meta, R, ranked, settings, update, sel, setSel, sort, setSort, rankVal, pickSet, busy, dataVer, cmpSet, toggleCmp, cmpFull }) {
+export default function Screener({ D, meta, R, ranked, settings, update, sel, setSel, sort, setSort, rankVal, pickSet, busy, dataVer, cmpSet, toggleCmp, cmpFull, cal }) {
   const cat = useMemo(() => Object.fromEntries(meta.catalog.map((m) => [m.id, m])), [meta]);
   const [q, setQ] = useState(settings.filters.search || "");
   const [showAdd, setShowAdd] = useState(false);
@@ -24,16 +24,21 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
       { k: "country", l: "País", w: "120px", v: (i) => meta.countries[D.country[i]] },
       { k: "industry", l: "Industria", w: "170px", v: (i) => meta.industryEs[D.industry[i]] },
       { k: "mcap", l: "Cap. mercado", w: "100px", num: true, v: (i) => D.cols.mcap[i], f: fmtUsd },
-      { k: "cagr", l: `Ret. anual esp.`, w: "130px", num: true, v: (i) => R.cagr[i] },
-      { k: "E", l: `Múltiplo ${H}a`, w: "110px", num: true, v: (i) => R.E[i] },
-      { k: "scen", l: "Alc · Base · Baj", w: "180px", num: true, v: (i) => R.base[i] },
+      ...(cal ? [
+        { k: "calm", l: "Ret. calibrado", w: "112px", num: true, v: (i) => cal.med[i], tip: `Retorno anual MEDIANO que realizaron en el backtest de EE.UU. (2011–2025, corregido por empresas que dejaron de cotizar) las acciones en el mismo percentil del ranking, a ${H} años.` },
+        { k: "p2x", l: `P(≥2x) ${H}a`, w: "90px", num: true, v: (i) => cal.p2x[i], tip: `Probabilidad histórica de duplicar el capital en ${H} años para ese percentil del ranking.` },
+        { k: "ploss", l: "P(pérdida)", w: "90px", num: true, v: (i) => cal.pLoss[i], tip: `Probabilidad histórica de terminar con menos dinero del invertido a ${H} años.` },
+      ] : []),
+      { k: "cagr", l: `Ret. modelo`, w: "112px", num: true, v: (i) => R.cagr[i], tip: "Retorno anual esperado por la proyección de escenarios del modelo. NO calibrado: en el backtest el decil superior del modelo esperaba mucho más de lo que realizó." },
+      { k: "E", l: `Múltiplo ${H}a`, w: "100px", num: true, v: (i) => R.E[i], tip: "Múltiplo esperado por el modelo (no calibrado)." },
+      { k: "scen", l: "Alc · Base · Baj", w: "180px", num: true, v: (i) => R.base[i], tip: "Escenarios del modelo (no calibrados)." },
       { k: "score", l: "Score ADN", w: "108px", num: true, v: (i) => R.score[i] },
-      { k: "conf", l: "Confianza", w: "88px", num: true, v: (i) => R.conf[i] },
-      { k: "kelly", l: "Kelly f*", w: "80px", num: true, v: (i) => R.kelly[i] },
+      { k: "conf", l: "Integridad", w: "88px", num: true, v: (i) => R.conf[i], tip: "Integridad de datos: puntaje heurístico (no una probabilidad) que baja con patrones típicos de datos erróneos o no recurrentes." },
+      { k: "kelly", l: cal ? "Kelly cal." : "Kelly f*", w: "80px", num: true, v: (i) => (cal ? cal.kelly[i] : R.kelly[i]), tip: cal ? "Fracción Kelly individual (contra efectivo al 3%) con la distribución histórica calibrada." : "Fracción Kelly individual con los escenarios del modelo." },
     ];
     const extra = settings.columns.filter((id) => cat[id]).map((id) => ({ k: id, l: cat[id].label, w: "120px", num: true, v: (i) => D.cols[id]?.[i], f: (x) => fmtMetric(x, id, cat[id].unit), metric: true }));
     return [...base, ...extra];
-  }, [D, R, meta, settings.columns, cat, H, dataVer, toggleCmp]);
+  }, [D, R, meta, settings.columns, cat, H, dataVer, toggleCmp, cal]);
 
   const rows = useMemo(() => {
     if (sort.key === "rank") return sort.dir === -1 ? ranked : [...ranked].reverse();
@@ -93,7 +98,9 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
       case "scen": return Number.isNaN(R.base[i]) ? "—" : <span className="scen"><span className="b">{fmtX(R.bull[i], 1)}</span><span className="m">{fmtX(R.base[i], 1)}</span><span className="r">{fmtX(R.bear[i], 1)}</span></span>;
       case "score": return <span style={{ display: "flex", gap: 6, alignItems: "center" }}><span className="bar"><i style={{ width: `${R.score[i] * 100}%` }} /></span>{Math.round(R.score[i] * 100)}</span>;
       case "conf": { const c2 = R.conf[i]; return <span className={`conf ${c2 >= 0.75 ? "h" : c2 >= 0.5 ? "m" : "l"}`}>{Math.round(c2 * 100)}%</span>; }
-      case "kelly": return Number.isNaN(R.kelly[i]) ? "—" : `${Math.round(R.kelly[i] * 100)}%`;
+      case "kelly": { const k = c.v(i); return Number.isNaN(k) ? "—" : `${Math.round(k * 100)}%`; }
+      case "calm": { const x = cal.med[i]; return Number.isNaN(x) ? "—" : <span className={cagrClass(x)}>{fmtPct(x * 100)}</span>; }
+      case "p2x": case "ploss": { const x = c.v(i); return Number.isNaN(x) ? "—" : `${Math.round(x * 100)}%`; }
       default: { const v = c.v(i); return c.f ? c.f(v) : v; }
     }
   };
@@ -137,7 +144,7 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
         {!R ? <div className="loading">Calculando el modelo sobre {D.n.toLocaleString("es")} acciones…</div> : (
           <div className="tgrid" style={{ gridTemplateColumns: tpl }}>
             {cols.map((c) => (
-              <div key={c.k} className={`th thead ${c.num ? "num" : ""} ${c.k === "cmp" ? "cmpcol" : ""} ${sort.key === c.k ? "sorted" : ""}`} onClick={() => clickHead(c.k)} title={c.k === "cmp" ? "Seleccionar hasta 4 empresas para comparar" : c.l}>
+              <div key={c.k} className={`th thead ${c.num ? "num" : ""} ${c.k === "cmp" ? "cmpcol" : ""} ${sort.key === c.k ? "sorted" : ""}`} onClick={() => clickHead(c.k)} title={c.k === "cmp" ? "Seleccionar hasta 4 empresas para comparar" : c.tip || c.l}>
                 {c.l}{sort.key === c.k ? (sort.dir === -1 ? " ↓" : " ↑") : ""}
               </div>
             ))}
