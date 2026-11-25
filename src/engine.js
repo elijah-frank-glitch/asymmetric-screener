@@ -22,7 +22,7 @@ export const CYCLICAL = new Set([
 export const DEFAULT_FILTERS = {
   mcapMin: 100e6, mcapMax: null, liqMin: 100e3, requireRevenue: true, commonOnly: true, confMin: 0.5,
   accessibleOnly: false,
-  sectors: [], countries: [], excludeIndustries: ["Investment Trusts/Mutual Funds"], search: "",
+  sectors: [], countries: [], exchanges: [], excludeIndustries: ["Investment Trusts/Mutual Funds"], search: "",
   ranges: [], // [{id, min, max}]
 };
 
@@ -129,6 +129,7 @@ export function passesFilters(D, i, F) {
   if (F.requireRevenue && !(D.cols.revenue[i] > 1e6)) return false;
   if (F.commonOnly && !D.common[i]) return false;
   if (F.accessibleOnly && D.exchanges && !ACCESSIBLE_EXCHANGES.has(D.exchanges[D.exchange[i]])) return false;
+  if (F.exchanges?.length && D.exchanges && !F.exchanges.includes(D.exchanges[D.exchange[i]])) return false;
   if (F.sectors?.length && !F.sectors.includes(D.sectors[D.sector[i]])) return false;
   if (F.countries?.length && !F.countries.includes(D.countries[D.country[i]])) return false;
   if (F.excludeIndustries?.length && F.excludeIndustries.includes(D.industries[D.industry[i]])) return false;

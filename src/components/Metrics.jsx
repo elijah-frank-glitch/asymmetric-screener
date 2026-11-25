@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { PRESETS, PARAM_INFO } from "../model.js";
 
 export default function Metrics({ D, meta, settings, update }) {
@@ -58,7 +58,7 @@ export default function Metrics({ D, meta, settings, update }) {
                     <td className="d">{m.desc}</td>
                     <td className="c"><input type="checkbox" checked={settings.columns.includes(m.id)} onChange={(e) => toggleCol(m.id, e.target.checked)} /></td>
                     <td className="c"><input type="checkbox" checked={W[m.id] > 0} onChange={(e) => toggleModel(m.id, e.target.checked)} /></td>
-                    <td className="c">{W[m.id] > 0 ? <><input type="number" min="0" max="50" value={W[m.id]} onChange={(e) => setW(m.id, Number(e.target.value))} /><div className="small">{Math.round((W[m.id] / totalW) * 100)}%</div></> : <span className="small">—</span>}</td>
+                    <td className="c">{W[m.id] > 0 ? <><WeightInput value={W[m.id]} onCommit={(v) => setW(m.id, v)} /><div className="small">{Math.round((W[m.id] / totalW) * 100)}%</div></> : <span className="small">—</span>}</td>
                     <td className="c small">{m.better > 0 ? "↑ mejor" : m.better < 0 ? "↓ mejor" : "↑ (neutral)"}</td>
                   </tr>
                 ))}
@@ -68,5 +68,21 @@ export default function Metrics({ D, meta, settings, update }) {
         );
       })}
     </div>
+  );
+}
+
+// Campo de peso con borrador local: se puede borrar el número y escribir otro sin que la métrica salga del modelo.
+// Solo se aplica un número > 0; si se deja vacío o en 0 al salir, vuelve al valor anterior (para quitarla, desmarca "En el modelo").
+function WeightInput({ value, onCommit }) {
+  const [draft, setDraft] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setDraft(String(value)); }, [value, editing]);
+  const commit = (txt) => { const v = Number(String(txt).replace(",", ".")); if (txt !== "" && Number.isFinite(v) && v > 0) onCommit(Math.min(100, v)); };
+  return (
+    <input type="number" min="0" max="100" step="0.5" value={draft}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => { setDraft(e.target.value); commit(e.target.value); }}
+      onBlur={() => { setEditing(false); setDraft(String(value)); }}
+      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
   );
 }

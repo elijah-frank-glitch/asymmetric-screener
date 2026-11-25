@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { PRESETS } from "../model.js";
-import { DEFAULT_FILTERS } from "../engine.js";
+import { DEFAULT_FILTERS, ACCESSIBLE_EXCHANGES } from "../engine.js";
+import { loadCustomModel } from "../customModel.js";
 
 const MCAP_MIN = [[0, "Todas"], [10e6, "≥ $10M"], [50e6, "≥ $50M"], [100e6, "≥ $100M"], [300e6, "≥ $300M"], [1e9, "≥ $1B"], [10e9, "≥ $10B"]];
 const MCAP_MAX = [[0, "Sin tope"], [300e6, "≤ $300M (micro)"], [2e9, "≤ $2B (small)"], [10e9, "≤ $10B (mid)"], [50e9, "≤ $50B"], [200e9, "≤ $200B"]];
@@ -10,6 +11,13 @@ export default function Sidebar({ D, meta, settings, update }) {
   const F = settings.filters;
   const setF = (patch) => update((s) => ({ filters: { ...s.filters, ...patch } }));
   const [cq, setCq] = useState("");
+  const [eq, setEq] = useState("");
+  const exchangeCounts = useMemo(() => {
+    const c = new Array(meta.exchanges.length).fill(0);
+    for (let i = 0; i < D.n; i++) c[D.exchange[i]]++;
+    return meta.exchanges.map((n, k) => [n, c[k]]).filter(([n]) => n && n !== "—").sort((a, b) => b[1] - a[1]);
+  }, [D, meta]);
+  const exch = F.exchanges || [];
 
   const countryCounts = useMemo(() => {
     const c = new Array(meta.countries.length).fill(0);
@@ -18,7 +26,11 @@ export default function Sidebar({ D, meta, settings, update }) {
   }, [D, meta]);
 
   const choosePreset = (k) => {
-    if (k === "custom") update({ preset: "custom" });
+    if (k === "custom") {
+      // recupera el modelo personalizado de esta sesión (si lo hubo) en lugar de quedarse con los pesos de la teoría actual
+      const saved = loadCustomModel();
+      update(saved ? { preset: "custom", weights: { ...saved.weights }, params: { ...saved.params } } : { preset: "custom" });
+    }
     else update({ preset: k, weights: { ...PRESETS[k].weights }, params: { ...PRESETS[k].params } });
   };
   const toggle = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
@@ -97,6 +109,19 @@ export default function Sidebar({ D, meta, settings, update }) {
           <label><span><input type="checkbox" checked={F.excludeIndustries?.includes("Investment Trusts/Mutual Funds")} onChange={(e) => setF({ excludeIndustries: e.target.checked ? ["Investment Trusts/Mutual Funds"] : [] })} /> Excluir fondos y vehículos de inversión</span></label>
           <label><span><input type="checkbox" checked={!!F.accessibleOnly} onChange={(e) => setF({ accessibleOnly: e.target.checked })} /> Solo mercados accesibles desde Latinoamérica</span></label>
           <div className="hint">Bolsas que un inversionista minorista suele poder comprar con un bróker internacional (p. ej. Interactive Brokers): EE.UU., Canadá, Londres, Alemania, Euronext, Suiza, Italia, España, nórdicos, Australia, Japón, Hong Kong, Singapur y Nueva Zelanda. Verifica con tu bróker.</div>
+        </div>
+        <div className="field">
+          <label>Bolsas / mercados {exch.length ? <b>{exch.length}</b> : <span className="small">todas ({exchangeCounts.length})</span>}</label>
+          <input placeholder="Buscar bolsa (NYSE, LSE, TSE…)" value={eq} onChange={(e) => setEq(e.target.value)} style={{ width: "100%", marginBottom: 6 }} />
+          <div className="chips" style={{ maxHeight: 150, overflowY: "auto" }}>
+            {exchangeCounts.filter(([n]) => exch.includes(n) || !eq || n.toLowerCase().includes(eq.toLowerCase())).slice(0, eq ? 100 : 30).map(([n, c]) => (
+              <button key={n} className={`chip ${exch.includes(n) ? "on" : ""}`} onClick={() => setF({ exchanges: toggle(exch, n) })}
+                title={ACCESSIBLE_EXCHANGES.has(n) ? "Suele estar disponible en brókers internacionales" : ""}>
+                {n}{ACCESSIBLE_EXCHANGES.has(n) ? " ✓" : ""} <span className="small">{c}</span>
+              </button>
+            ))}
+          </div>
+          <div className="hint">Elige una o varias para ver solo esas bolsas. ✓ = suele estar disponible en brókers internacionales; confirma con el tuyo. {exch.length > 0 && <a href="#" onClick={(e) => { e.preventDefault(); setF({ exchanges: [] }); }}>Quitar selección</a>}</div>
         </div>
         <div className="field">
           <label>Sectores {F.sectors.length ? <b>{F.sectors.length}</b> : <span className="small">todos</span>}</label>

@@ -12,6 +12,7 @@ import Track from "./components/Track.jsx";
 import Backtest from "./components/Backtest.jsx";
 import Compare from "./components/Compare.jsx";
 import { encodeState, decodeHash, applyShared, shareUrl, shareLink, MAX_COMPARE } from "./share.js";
+import { saveCustomModel } from "./customModel.js";
 import { useCalTables, calDist, calKelly, calOutcomes, theoryOf, RF_ANNUAL } from "./calibration.js";
 
 const STORE = "asymmetric-settings-v3";
@@ -94,6 +95,8 @@ export default function App() {
     return () => window.removeEventListener("hashchange", on);
   }, [D, meta, applyHash]);
   useEffect(() => { try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch {} }, [settings]);
+  // cada cambio estando en "Personalizado" queda guardado para la sesión (para poder ir a otra teoría y volver)
+  useEffect(() => { if (settings.preset === "custom") saveCustomModel(settings.weights, settings.params); }, [settings.preset, settings.weights, settings.params]);
   useEffect(() => { try { localStorage.setItem(CMP_STORE, JSON.stringify(cmp)); } catch {} }, [cmp]);
 
   const showToast = useCallback((t) => {

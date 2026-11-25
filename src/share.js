@@ -116,7 +116,7 @@ export function applyShared(o, defaults, meta, D) {
         for (const k of ["mcapMin", "mcapMax", "liqMin"]) if (k in f) F[k] = isNum(f[k]) && f[k] > 0 ? f[k] : null;
         if (isNum(f.confMin)) F.confMin = clamp(f.confMin, 0, 1);
         for (const k of ["requireRevenue", "commonOnly", "accessibleOnly"]) if (typeof f[k] === "boolean") F[k] = f[k];
-        for (const k of ["sectors", "countries", "excludeIndustries"]) { const a = strArr(f[k]); if (a) F[k] = a; }
+        for (const k of ["sectors", "countries", "exchanges", "excludeIndustries"]) { const a = strArr(f[k]); if (a) F[k] = a; }
         if (typeof f.search === "string") F.search = f.search.slice(0, 100);
         if (Array.isArray(f.ranges)) {
           const nv = (v) => (v === "" || v == null ? "" : isNum(v) ? v : typeof v === "string" && v.length < 30 && Number.isFinite(Number(v)) ? v : "");
