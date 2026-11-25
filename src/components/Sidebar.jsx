@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { PRESETS } from "../model.js";
-import { DEFAULT_FILTERS, ACCESSIBLE_EXCHANGES } from "../engine.js";
+import { DEFAULT_FILTERS, ACCESSIBLE_EXCHANGES, confidenceAll } from "../engine.js";
 import { loadCustomModel } from "../customModel.js";
 
 const MCAP_MIN = [[0, "Todas"], [10e6, "≥ $10M"], [50e6, "≥ $50M"], [100e6, "≥ $100M"], [300e6, "≥ $300M"], [1e9, "≥ $1B"], [10e9, "≥ $10B"]];
@@ -28,8 +28,9 @@ export default function Sidebar({ D, meta, settings, update }) {
   const choosePreset = (k) => {
     if (k === "custom") {
       // recupera el modelo personalizado de esta sesión (si lo hubo) en lugar de quedarse con los pesos de la teoría actual
+      // si ya armaste un modelo en esta sesión, vuelve a él; si no, empieza en limpio (ninguna métrica en el modelo)
       const saved = loadCustomModel();
-      update(saved ? { preset: "custom", weights: { ...saved.weights }, params: { ...saved.params } } : { preset: "custom" });
+      update(saved ? { preset: "custom", weights: { ...saved.weights }, params: { ...saved.params } } : { preset: "custom", weights: {}, params: { ...PRESETS.adn.params } });
     }
     else update({ preset: k, weights: { ...PRESETS[k].weights }, params: { ...PRESETS[k].params } });
   };
@@ -140,8 +141,47 @@ export default function Sidebar({ D, meta, settings, update }) {
             ))}
           </div>
         </div>
-        <button className="btn small ghost" onClick={() => update({ filters: { ...DEFAULT_FILTERS } })}>Restablecer filtros</button>
+        <Funnel D={D} F={F} />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button className="btn small ghost" onClick={() => update({ filters: { ...DEFAULT_FILTERS } })}>Restablecer filtros</button>
+          <button className="btn small ghost" onClick={() => update({ filters: { ...DEFAULT_FILTERS, mcapMin: null, liqMin: null, requireRevenue: false, commonOnly: false, confMin: 0, excludeIndustries: [] } })} title="Quita todos los filtros para ver las ~49,000 acciones">Ver todas</button>
+        </div>
       </div>
     </>
   );
 }
+
+// Embudo: cuántas acciones quedan después de cada filtro (en orden), para ver qué recorta más
+function Funnel({ D, F }) {
+  const steps = useMemo(() => {
+    const conf = confidenceAll(D);
+    const fs = [
+      ["Universo (con capitalización)", (i) => D.cols.mcap[i] > 0],
+      [F.mcapMin ? `Cap. ≥ ${fmtCap(F.mcapMin)}` : null, (i) => !F.mcapMin || D.cols.mcap[i] >= F.mcapMin],
+      [F.mcapMax ? `Cap. ≤ ${fmtCap(F.mcapMax)}` : null, (i) => !F.mcapMax || D.cols.mcap[i] <= F.mcapMax],
+      [F.liqMin ? `Liquidez ≥ ${fmtCap(F.liqMin)}/día` : null, (i) => !F.liqMin || D.cols.liq_usd[i] >= F.liqMin],
+      [F.requireRevenue ? "Con ingresos" : null, (i) => !F.requireRevenue || D.cols.revenue[i] > 1e6],
+      [F.commonOnly ? "Solo comunes" : null, (i) => !F.commonOnly || D.common[i]],
+      [F.excludeIndustries?.length ? "Sin fondos" : null, (i) => !F.excludeIndustries?.length || !F.excludeIndustries.includes(D.industries[D.industry[i]])],
+      [F.confMin ? `Integridad ≥ ${Math.round(F.confMin * 100)}%` : null, (i) => !F.confMin || conf[i] >= F.confMin],
+    ].filter(([l]) => l);
+    const out = [];
+    let alive = Array.from({ length: D.n }, (_, i) => i);
+    for (const [l, f] of fs) { alive = alive.filter(f); out.push([l, alive.length]); }
+    return out;
+  }, [D, F.mcapMin, F.mcapMax, F.liqMin, F.requireRevenue, F.commonOnly, F.excludeIndustries, F.confMin]);
+  const max = D.n;
+  return (
+    <div className="field">
+      <label>Embudo de filtros <span className="small">(antes de sector, país y bolsa)</span></label>
+      {steps.map(([l, n], k) => (
+        <div key={l} className="funnel" title={k ? `Este filtro quita ${(steps[k - 1][1] - n).toLocaleString("es")}` : ""}>
+          <span>{l}</span><b>{n.toLocaleString("es")}</b>
+          <i style={{ width: `${(n / max) * 100}%` }} />
+        </div>
+      ))}
+      <div className="hint">El recorte grande es el tamaño: ~25,000 acciones del mundo valen menos de $100M (micro y nano caps, casi siempre ilíquidas y con datos frágiles). Bájalo a $10M o pulsa “Ver todas” para incluirlas.</div>
+    </div>
+  );
+}
+const fmtCap = (x) => (x >= 1e9 ? `$${x / 1e9}B` : x >= 1e6 ? `$${x / 1e6}M` : `$${x / 1e3}K`);

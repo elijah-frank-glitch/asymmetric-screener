@@ -278,3 +278,8 @@ table.simple tr.tot td { font-weight: 700; border-top: 1px solid var(--line2); }
 .modetoggle button { background: transparent; color: var(--muted); border: 0; padding: 6px 10px; font-size: 12px; cursor: pointer; }
 .modetoggle button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); font-weight: 600; }
 .valid h5 { margin: 14px 0 4px; font-size: 13px; color: var(--accent2); }
+
+.funnel { position: relative; display: flex; justify-content: space-between; font-size: 11px; padding: 3px 6px; margin: 2px 0; border-radius: 4px; overflow: hidden; }
+.funnel span, .funnel b { position: relative; z-index: 1; }
+.funnel b { font-family: var(--mono); }
+.funnel i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 16%, transparent); }

@@ -39,7 +39,11 @@ export default function Metrics({ D, meta, settings, update }) {
         </div>
         <button className="btn small" onClick={() => update({ weights: { ...PRESETS[settings.preset === "custom" ? "adn" : settings.preset].weights }, params: { ...PRESETS[settings.preset === "custom" ? "adn" : settings.preset].params }, preset: settings.preset === "custom" ? "adn" : settings.preset })}>
           Restablecer a la teoría {settings.preset === "custom" ? "ADN (default)" : "seleccionada"}
+        </button>{" "}
+        <button className="btn small" onClick={() => update({ preset: "custom", weights: {}, params: { ...PRESETS.adn.params } })} title="Personalizado sin ninguna métrica: marca tú cuáles cuentan">
+          Empezar un modelo en limpio
         </button>
+        {used === 0 && <div className="hint" style={{ marginTop: 6 }}>Tu modelo personalizado no tiene métricas todavía: marca “En el modelo” en las que quieras usar. Sin métricas, todas las empresas tienen el mismo score y el ranking sale solo de la proyección fundamental.</div>}
       </div>
 
       <input placeholder="Buscar métrica…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 300, margin: "6px 0 14px" }} />

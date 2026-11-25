@@ -5,7 +5,7 @@ const ROW = 34;
 const COLORS = ["#34d399", "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb923c", "#4ade80"];
 export const avColor = (s) => COLORS[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
 
-export default function Screener({ D, meta, R, ranked, settings, update, sel, setSel, sort, setSort, rankVal, pickSet, busy, dataVer, cmpSet, toggleCmp, cmpFull, cal }) {
+export default function Screener({ D, meta, R, ranked, total, outside = 0, rankPos, settings, update, sel, setSel, sort, setSort, rankVal, pickSet, busy, dataVer, cmpSet, toggleCmp, cmpFull, cal }) {
   const cat = useMemo(() => Object.fromEntries(meta.catalog.map((m) => [m.id, m])), [meta]);
   const [q, setQ] = useState(settings.filters.search || "");
   const [showAdd, setShowAdd] = useState(false);
@@ -16,10 +16,12 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
   }, [q]);
 
   const H = settings.horizon;
+  // puesto real en el ranking completo (no en la lista filtrada por el buscador); -1 = no pasa tus filtros
+  const posOf = useMemo(() => ({ get: (i) => (rankPos ? rankPos[i] : ranked.indexOf(i)) }), [rankPos, ranked]);
   const cols = useMemo(() => {
     const base = [
       ...(toggleCmp ? [{ k: "cmp", l: "⚖", w: "34px", nosort: true }] : []),
-      { k: "rank", l: "#", w: "52px", num: true, v: (i, pos) => pos + 1 },
+      { k: "rank", l: "#", w: "60px", num: true, v: (i) => { const p = posOf.get(i); return p >= 0 ? p + 1 : Infinity; } },
       { k: "name", l: "Empresa", w: "250px", v: (i) => D.name[i] },
       { k: "country", l: "País", w: "120px", v: (i) => meta.countries[D.country[i]] },
       { k: "industry", l: "Industria", w: "170px", v: (i) => meta.industryEs[D.industry[i]] },
@@ -38,10 +40,11 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
     ];
     const extra = settings.columns.filter((id) => cat[id]).map((id) => ({ k: id, l: cat[id].label, w: "120px", num: true, v: (i) => D.cols[id]?.[i], f: (x) => fmtMetric(x, id, cat[id].unit), metric: true }));
     return [...base, ...extra];
-  }, [D, R, meta, settings.columns, cat, H, dataVer, toggleCmp, cal]);
+  }, [D, R, meta, settings.columns, cat, H, dataVer, toggleCmp, cal, posOf]);
 
   const rows = useMemo(() => {
     if (sort.key === "rank") return sort.dir === -1 ? ranked : [...ranked].reverse();
+    // (ranked ya viene en orden de puesto, con las de "fuera" al final)
     const c = cols.find((c) => c.k === sort.key);
     if (!c) return ranked;
     const arr = [...ranked];
@@ -55,7 +58,6 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
     });
     return arr;
   }, [ranked, sort, cols]);
-  const posOf = useMemo(() => { const m = new Map(); ranked.forEach((i, k) => m.set(i, k)); return m; }, [ranked]);
 
   // virtualización
   const wrap = useRef(null);
@@ -73,7 +75,7 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
   const clickHead = (k) => k !== "cmp" && setSort((s) => (s.key === k ? { key: k, dir: -s.dir } : { key: k, dir: k === "name" || k === "country" || k === "industry" ? 1 : -1 }));
 
   const cell = (c, i) => {
-    const pos = posOf.get(i) ?? 0;
+    const pos = posOf.get(i) ?? -1;
     switch (c.k) {
       case "cmp": {
         const on = cmpSet?.has(D.sym[i]);
@@ -84,7 +86,7 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
             onClick={(e) => e.stopPropagation()} onChange={() => toggleCmp(D.sym[i])} />
         );
       }
-      case "rank": return pos + 1;
+      case "rank": return pos >= 0 ? <span title={`Puesto ${pos + 1} de ${(total ?? ranked.length).toLocaleString("es")} con tus filtros`}>{pos + 1}</span> : <span className="neu" title="No pasa tus filtros: abre la ficha para ver por qué">fuera</span>;
       case "name": return (
         <div className="co">
           <div className="av" style={{ background: avColor(D.ticker[i]) }}>{D.ticker[i].slice(0, 2)}</div>
@@ -112,7 +114,7 @@ export default function Screener({ D, meta, R, ranked, settings, update, sel, se
     <>
       <div className="toolbar">
         <input className="search" placeholder="Buscar ticker o empresa…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <span className="info"><b>{ranked.length.toLocaleString("es")}</b> de {D.n.toLocaleString("es")} acciones pasan los filtros</span>
+        <span className="info"><b>{(total ?? ranked.length).toLocaleString("es")}</b> de {D.n.toLocaleString("es")} acciones pasan los filtros{settings.filters.search ? <> · búsqueda: {(ranked.length - outside).toLocaleString("es")} dentro{outside ? <>, {outside} fuera de tus filtros (al final, marcadas “fuera”)</> : null}</> : null}</span>
         {busy && <span className="calc">recalculando…</span>}
         <span style={{ flex: 1 }} />
         <button className="btn small" onClick={() => { setShowFilter((x) => !x); setShowAdd(false); }}>⧩ Filtro por métrica {ranges.length ? `(${ranges.length})` : ""}</button>

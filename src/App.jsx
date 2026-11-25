@@ -156,9 +156,10 @@ export default function App() {
     return R.cagr[i];
   }, [R, rankKey]);
 
+  // ranked = ranking completo con tus filtros (SIN el buscador): define el puesto real de cada empresa y el portafolio.
   const ranked = useMemo(() => {
     if (!D || !R) return [];
-    const F = settings.filters;
+    const F = { ...settings.filters, search: "" };
     const idx = [];
     for (let i = 0; i < D.n; i++) if (passesFilters(D, i, F)) idx.push(i);
     idx.sort((a, b) => {
@@ -168,7 +169,21 @@ export default function App() {
       return vb - va;
     });
     return idx;
-  }, [D, R, settings.filters, rankVal, dataVer]);
+  }, [D, R, settings.filters.mcapMin, settings.filters.mcapMax, settings.filters.liqMin, settings.filters.requireRevenue, settings.filters.commonOnly,
+    settings.filters.confMin, settings.filters.accessibleOnly, settings.filters.sectors, settings.filters.countries, settings.filters.exchanges,
+    settings.filters.excludeIndustries, settings.filters.ranges, rankVal, dataVer]);
+  // lo que se ve en la tabla: el ranking filtrado por el buscador, más (al final) las coincidencias que NO pasan tus filtros
+  const searchQ = (settings.filters.search || "").trim().toLowerCase();
+  const shown = useMemo(() => {
+    if (!D || !searchQ) return { list: ranked, outside: 0 };
+    const hit = (i) => D.ticker[i].toLowerCase().includes(searchQ) || D.name[i].toLowerCase().includes(searchQ);
+    const inR = ranked.filter(hit);
+    const inSet = new Set(inR);
+    const out = [];
+    for (let i = 0; i < D.n && out.length < 200; i++) if (!inSet.has(i) && hit(i)) out.push(i);
+    out.sort((x, y) => (D.cols.mcap[y] || 0) - (D.cols.mcap[x] || 0));
+    return { list: [...inR, ...out], outside: out.length };
+  }, [D, ranked, searchQ]);
 
   // ---- Calibración: percentil del ranking (por crecimiento geométrico esperado, sobre el universo con filtros por
   // defecto, igual que el backtest) → distribución histórica realizada. Se precalcula en una rejilla de percentiles.
@@ -294,7 +309,7 @@ export default function App() {
             <Sidebar D={D} meta={meta} settings={settings} update={update} />
           </aside>
           <main className="main">
-            <Screener D={D} meta={meta} R={R} ranked={ranked} settings={settings} update={update} sel={sel} setSel={setSel}
+            <Screener D={D} meta={meta} R={R} ranked={shown.list} total={ranked.length} outside={shown.outside} rankPos={rankPos} settings={settings} update={update} sel={sel} setSel={setSel}
               sort={sort} setSort={setSort} rankVal={rankVal} pickSet={pickSet} busy={busy} dataVer={dataVer} cal={cal}
               cmpSet={cmpSet} toggleCmp={toggleCmp} cmpFull={cmp.length >= MAX_COMPARE} />
           </main>
